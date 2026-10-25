@@ -2,6 +2,7 @@
 (function(g){
 const C = g.CORE, D = g.DEFS;
 const CFG = g.APP_CONFIG || {};
+if(!g.APP_CONFIG && typeof location !== "undefined" && location.protocol === "https:") g.CONFIG_ERROR = true;   // config.js com erro no site publicado
 const ls = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v==null ? d : JSON.parse(v); }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },

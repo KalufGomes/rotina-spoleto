@@ -174,8 +174,6 @@ function renderHeaderOnly(){ if(ST.view === "team" && !ST.current) render(); }
 async function activationScreen(){
   app().innerHTML = header().replace(/<div class="seg"[\s\S]*?<\/div><\/div><\/header>/, "</div></header>") + `<main><div class="login card pad-l">
     <h1>Ativar este aparelho</h1>
-    <p class="sub"><b>Tablet da cozinha:</b> a Taise, o Vagner ou a Manu entram uma vez com o PIN, e o tablet fica liberado para a equipe.</p>
-    <p class="sub"><b>Celular:</b> cada pessoa da gestão e o proprietário escolhem o próprio nome e entram com o próprio PIN.</p>
     <div class="act-btns"><button class="btn" id="act-tablet">É o tablet da cozinha</button><button class="btn ghost" id="act-phone">É o meu celular</button></div>
     <p class="err" id="act-err"></p></div></main>`;
   try{ ST.people = await A.people(); }catch(e){ $("#act-err").textContent = "Não foi possível falar com o servidor. Confira a internet e o endereço configurado."; return; }
@@ -193,6 +191,7 @@ async function activationScreen(){
 
 /* ---------- render principal ---------- */
 function render(){
+  if(window.CONFIG_ERROR){ app().innerHTML = `<main><div class="login card pad-l"><h1>Configuração com erro</h1><p class="sub">O arquivo config.js não pôde ser lido. Confira se ele tem só o bloco APP_CONFIG, com vírgulas e chaves no lugar, e publique de novo.</p></div></main>`; return; }
   if(!token()){ return activationScreen(); }
   if(!ST.loaded && !ST.error){ app().innerHTML = header() + `<main><p class="sub">Carregando…</p></main>`; bindHeader(); return; }
   if(ST.view === "mgr" && !isAdmin()){ ST.view = "team"; }
