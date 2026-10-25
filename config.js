@@ -19,5 +19,5 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);,        // { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId }
-  vapidKey: "",          // Firebase > Configurações do projeto > Cloud Messaging > Certificados push da Web
+  vapidKey: "BGZJHhPVVyV-LQjb13H5N6e-94YuP3x_AJlq-C3-R8GasstN-uxFefg592zYlGAizQiQhGkLDgotIw6GRnVBiuk",          // Firebase > Configurações do projeto > Cloud Messaging > Certificados push da Web
 };
