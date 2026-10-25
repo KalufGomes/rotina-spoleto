@@ -1,0 +1,17 @@
+{
+  "name": "Rotina da Cozinha · Spoleto Franca",
+  "short_name": "Rotina Cozinha",
+  "description": "Checklists, temperaturas e POPs da cozinha, com registros para a rede e a Vigilância.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f4f0",
+  "theme_color": "#16233f",
+  "lang": "pt-BR",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
