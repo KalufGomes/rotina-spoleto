@@ -1,6 +1,6 @@
 /* Service worker: funciona sem internet (tela) e recebe notificações do Firebase. */
 importScripts("config.js");
-const CACHE = "rotina-v2026-10-25b";
+const CACHE = "rotina-v2026-10-25c";
 const SHELL = ["./", "index.html", "config.js", "defs.js", "core.js", "api.js", "reports.js", "app.js", "push.js", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x)))).then(() => self.clients.claim())); });

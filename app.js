@@ -174,12 +174,13 @@ function renderHeaderOnly(){ if(ST.view === "team" && !ST.current) render(); }
 async function activationScreen(){
   app().innerHTML = header().replace(/<div class="seg"[\s\S]*?<\/div><\/div><\/header>/, "</div></header>") + `<main><div class="login card pad-l">
     <h1>Ativar este aparelho</h1>
-    <p class="sub">Peça ao Vagner ou à Manu para entrar uma vez com o PIN. Depois o aparelho fica liberado para a equipe.</p>
-    <div class="choice"><button class="btn" id="act-tablet">É o tablet da cozinha</button><button class="btn ghost" id="act-phone">É o meu celular (gestor)</button></div>
+    <p class="sub"><b>Tablet da cozinha:</b> a Taise, o Vagner ou a Manu entram uma vez com o PIN, e o tablet fica liberado para a equipe.</p>
+    <p class="sub"><b>Celular:</b> cada pessoa da gestão e o proprietário escolhem o próprio nome e entram com o próprio PIN.</p>
+    <div class="act-btns"><button class="btn" id="act-tablet">É o tablet da cozinha</button><button class="btn ghost" id="act-phone">É o meu celular</button></div>
     <p class="err" id="act-err"></p></div></main>`;
   try{ ST.people = await A.people(); }catch(e){ $("#act-err").textContent = "Não foi possível falar com o servidor. Confira a internet e o endereço configurado."; return; }
   const go = async (type) => {
-    const r = await askPin({title:"Entrar como gestor", only: ST.people.filter(GEST).map(p => p.id), remember:true});
+    const r = await askPin({title: type === "tablet" ? "Liberar o tablet da cozinha" : "Quem é você?", only: ST.people.filter(type === "tablet" ? EDIT : GEST).map(p => p.id), remember:true});
     if(!r) return;
     ls.set("rotina-devtype", type);
     if(type === "tablet"){ try{ const d = await A.admin("deviceToken", r.token, {name:"Tablet da cozinha"}); ST.device = {token:d.token}; ls.set("rotina-device", ST.device); }catch(e){ $("#act-err").textContent = e.message; return; } ST.view = "team"; }
