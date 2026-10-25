@@ -8,7 +8,7 @@ import { initializeApp } from "firebase/app";
 // https://firebase.google.com/docs/web/setup#available-libraries
 
 // Your web app's Firebase configuration
-const firebaseConfig = {
+{
   apiKey: "AIzaSyDAa2kaLXbwg0ddnol_pubX996u-8O3ips",
   authDomain: "rotina-spoleto.firebaseapp.com",
   projectId: "rotina-spoleto",
