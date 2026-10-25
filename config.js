@@ -15,7 +15,7 @@ import { initializeApp } from "firebase/app";
   storageBucket: "rotina-spoleto.firebasestorage.app",
   messagingSenderId: "1059013341666",
   appId: "1:1059013341666:web:d584d655f2239def7a09bb"
-};
+},
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);,        // { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId }
