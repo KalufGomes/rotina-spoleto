@@ -68,24 +68,25 @@ function rede(ctx, month, sel){
 
   /* ---- POP 1A ---- */
   if(sel.includes("1A")){
-    const turns = [["expo_m","MANHÃ"],["expo_t","TARDE"],["expo_n","NOITE"]];
-    const items = CL("expo_m").items;
+    const items = CL("expo_m").items.filter(it => it.cat === "expo");
     const daysUsed = days.filter(d => d <= todayStr);
     for(let i=0;i<daysUsed.length;i+=2){
-      page("landscape"); let y = head("PLANILHA POP 1A · CONTROLE DE EXPOSIÇÃO DOS ALIMENTOS FRIOS (PISTA FRIA) E MOLHOS", "Pista fria: até 10 °C (pescado até 5 °C) · Molhos no atendimento: mín. 60 °C · leituras manhã (10h40), tarde (14h) e noite (19h)");
+      const pair = [daysUsed[i], daysUsed[i+1]].filter(Boolean);
+      const old3 = pair.some(d => C.on(CL("expo_n"), d));
+      page("landscape"); let y = head("PLANILHA POP 1A · CONTROLE DE EXPOSIÇÃO DOS ALIMENTOS FRIOS (PISTA FRIA) E MOLHOS", "Pista fria: até 10 °C (pescado até 5 °C) · Molhos no atendimento: mín. 60 °C · " + (old3 ? "até 05/11/2026: leituras manhã (10h40), tarde (14h) e noite (19h)" : "leituras manhã (10h às 11h) e tarde (17h às 18h)"));
       const W = doc.internal.pageSize.getWidth(), half = (W-24-6)/2;
-      [daysUsed[i], daysUsed[i+1]].forEach((d, k) => {
-        if(!d) return;
-        const ans = turns.map(([cl]) => idx[`D:${d}|${cl}`] || {});
+      pair.forEach((d, k) => {
+        const turns = C.on(CL("expo_n"), d) ? [["expo_m","MANHÃ"],["expo_t","TARDE"],["expo_n","NOITE"]] : [["expo_m","MANHÃ"],["expo_t","TARDE"]];
+        const ans = turns.map(([cl]) => { const a = idx[`D:${d}|${cl}`] || {}, o = {}; Object.keys(a).forEach(k => { if(ITEM(cl, k)?.cat === "expo") o[k] = a[k]; }); return o; });
         const body = items.map(it => [it.q + (it.max!=null ? ` (máx. ${it.max})` : ` (mín. ${it.min})`), ...ans.map(a => { const r = a[it.id]; if(!r) return ""; if(r.v==="na") return "N/A"; return (C.isDev(r, it) ? "!" : "") + String(r.v).replace(".",","); })]);
         const resp = ans.map(a => { const ids = [...new Set(Object.values(a).map(r=>r.by))]; return ids.map(pname).join(", "); });
         const hora = ans.map(a => { const v = Object.values(a); return v.length ? C.hm(new Date(v[0].ts)) : ""; });
         body.push([{content:"HORÁRIO", styles:{fontStyle:"bold"}}, ...hora], [{content:"RESPONSÁVEL", styles:{fontStyle:"bold"}}, ...resp]);
         doc.autoTable(baseTable(doc, {startY:y, margin:{left:12 + k*(half+6), right: k ? 12 : 12+half+6, top:16, bottom:14}, tableWidth:half,
-          head:[[`DATA: ${C.br(d)}`, "MANHÃ", "TARDE", "NOITE"]], body, styles:{fontSize:6.6, cellPadding:.9, lineColor:[210,206,196], lineWidth:.15, textColor:INK},
+          head:[[`DATA: ${C.br(d)}`, ...turns.map(t => t[1])]], body, styles:{fontSize:6.6, cellPadding:.9, lineColor:[210,206,196], lineWidth:.15, textColor:INK},
           columnStyles:{0:{cellWidth:half*0.52}, 1:{halign:"center"}, 2:{halign:"center"}, 3:{halign:"center"}}}));
       });
-      const devs = recs.filter(r => [daysUsed[i], daysUsed[i+1]].includes(r.date) && r.cl.startsWith("expo") && C.isDev(r, ITEM(r.cl, r.item)));
+      const devs = recs.filter(r => pair.includes(r.date) && r.cl.startsWith("expo") && ITEM(r.cl, r.item)?.cat === "expo" && C.isDev(r, ITEM(r.cl, r.item)));
       let yy = Math.max(doc.lastAutoTable.finalY, y);
       yy = obsBlock(yy, devs.map(devRow));
       supervisao(yy);
@@ -112,7 +113,7 @@ function rede(ctx, month, sel){
   }
   /* ---- POP 1C ---- */
   if(sel.includes("1C")){
-    page("landscape"); let y = head("PLANILHA POP 1C · CONTROLE DE TEMPERATURA DOS EQUIPAMENTOS", "M = manhã (abertura e pré-serviço) · N = noite (fechamento) · valores em °C");
+    page("landscape"); let y = head("PLANILHA POP 1C · CONTROLE DE TEMPERATURA DOS EQUIPAMENTOS", "M = 1ª leitura (abertura, pré-serviço e 10h às 11h) · N = 2ª leitura (17h às 18h; até 05/11/2026 no fechamento) · valores em °C");
     const eqs = D.EQUIP.filter(e=>e.pop1c);
     const head1 = [{content:"Data", rowSpan:2}, ...eqs.map(e => ({content:`${e.nome}\n${C.critText(e)}`, colSpan:2, styles:{halign:"center"}})), {content:"Responsável", rowSpan:2}];
     const head2 = eqs.flatMap(() => [{content:"M", styles:{halign:"center"}},{content:"N", styles:{halign:"center"}}]);
@@ -128,12 +129,13 @@ function rede(ctx, month, sel){
   if(sel.includes("8A")){
     page("landscape"); let y = head("PLANILHA POP 8A · CONTROLE DE HIGIENE DAS INSTALAÇÕES, EQUIPAMENTOS E UTENSÍLIOS", `Período ${C.br(days[0])} a ${C.br(days[days.length-1])} · Freq.: D diária, S semanal, M mensal · cada célula traz as iniciais de quem fez`);
     const MAP = [
-      ["Balança","D",[["limp_m","balanca"]]],["Balcão refrigerado","S",[["semanal","balcao_ref"]]],["Bancadas","D",[["limp_m","bancadas"],["fechamento","bancadas"]]],
-      ["Caixa de gordura","Terc.",[]],["Dispensers sabonete/álcool","S",[["semanal","dispensers"]]],["Estoque seco","S",[["semanal","estoque"]]],["Estrados/prateleiras estoque","S",[["semanal","estrados"]]],
-      ["Forno","D",[["fechamento","forno_in"],["semanal","forno_fora"]]],["Freezer","S",[["semanal","freezer_l"]]],["Frigideiras","D",[["fechamento","frigideiras"]]],["Geladeira de bebidas","D",[["limp_m","geladeira_beb"]]],
+      ["Balança","D",[["limp_m","balanca"]]],["Balcão","D",[["limp_t","balcao"],["fechamento","balcao"]]],["Balcão da frente","D",[["limp_m","balcao_frente"],["fechamento","balcao_frente"]]],["Balcão refrigerado","S",[["semanal","balcao_ref"]]],
+      ["Bancadas","D",[["limp_m","bancadas"],["fechamento","bancadas"]]],["Bandejas e talheres","D",[["limp_m","bandeja_talheres"],["limp_t","bandejas"],["limp_t","talheres"],["fechamento","bandeja_talheres"],["fechamento","bandejas"],["fechamento","talheres"]]],
+      ["Bandeja de temperos","D",[["fechamento","temperos"]]],["Caixa de gordura","Terc.",[]],["Coifa","M",[["mensal","coifa"]]],["Dispensers sabonete/álcool","S",[["semanal","dispensers"]]],["Estoque seco","S",[["semanal","estoque"]]],["Estrados/prateleiras estoque","S",[["semanal","estrados"]]],
+      ["Fogão","D",[["limp_t","fogao"],["fechamento","fogao"]]],["Forno (interno e externo)","S",[["fechamento","forno_in"],["semanal","forno_fora"]]],["Freezer","S",[["semanal","freezer_l"]]],["Frigideiras","D",[["limp_t","frigideiras"],["fechamento","frigideiras"]]],["Geladeira de bebidas","D",[["limp_m","geladeira_beb"]]],
       ["Interruptores/tomadas","S",[["semanal","interruptores"]]],["Lixeiras","D",[["limp_t","lixo"],["fechamento","lixo"],["semanal","lixeiras"]]],["Luminárias","M",[["mensal","luminarias"]]],
-      ["Máquina de gelo","S",[["semanal","gelo_l"]]],["Organizadores","S",[["semanal","organizadores"]]],["Paredes","S",[["semanal","paredes"]]],["Piso/rodapé","D",[["limp_m","piso"],["limp_t","piso"],["fechamento","piso"]]],
-      ["Pista fria","D",[["fechamento","pista_l"]]],["Portas","S",[["semanal","portas"]]],["Prateleiras frente de loja","S",[["semanal","prateleiras_frente"]]],["Ralos","D",[["fechamento","ralos"]]],
+      ["Máquina de gelo","S",[["semanal","gelo_l"]]],["Máquina de lavar","D",[["limp_t","maq_lavar"],["fechamento","maq_lavar"]]],["Organizadores","S",[["semanal","organizadores"]]],["Paredes","S",[["semanal","paredes"]]],["Piso/rodapé","D",[["limp_m","piso"],["limp_t","piso"],["fechamento","piso"]]],
+      ["Pista fria","D",[["fechamento","pista_l"]]],["Portas","M",[["semanal","portas"],["mensal","portas"]]],["Prateleiras frente de loja","S",[["semanal","prateleiras_frente"]]],["Pratos","D",[["limp_t","pratos"],["fechamento","pratos"]]],["Ralos","D",[["fechamento","ralos"]]],
       ["Tábuas de corte: higienização","D",[["fechamento","tabuas"]]],["Teto","S",[["semanal","teto"]]],
     ];
     const ownersTxt = (pairs) => { const o = new Set(); pairs.forEach(([cl]) => ((ctx.owners||{})[cl]?.owners||[]).forEach(x=>o.add(x))); return o.size ? [...o].map(initials).join("/") : "Todos"; };
@@ -186,7 +188,7 @@ function rede(ctx, month, sel){
     sec("POP 5A · Potabilidade da água");
     tbl(["Controle","Empresa","Data execução","Data validade","Observação"], ["reserv","vistoria","analise","filtro","filtro_gelo"].flatMap(id => { const h = docHist(id); return h.length ? h.map(x => [def(id).tipo, x.empresa||def(id).empresa, C.br(x.last), nextOf(id, x.last), x.obs||""]) : [[def(id).tipo, def(id).empresa, "!Sem registro", "", ""]]; }));
     const retro = recs.filter(r => inMonth(r) && r.cl==="semanal" && r.item==="retrolavagem");
-    tbl(["Retrolavagem do filtro","1ª semana","2ª semana","3ª semana","4ª semana","5ª semana"], [["Data (responsável)", ...[1,2,3,4,5].map(w => { const r = retro.find(x => Math.ceil(+x.date.slice(8)/7)===w); return r ? `${C.brShort(r.date)} (${pname(r.by)})` : ""; })]]);
+    if(retro.length) tbl(["Retrolavagem do filtro","1ª semana","2ª semana","3ª semana","4ª semana","5ª semana"], [["Data (responsável)", ...[1,2,3,4,5].map(w => { const r = retro.find(x => Math.ceil(+x.date.slice(8)/7)===w); return r ? `${C.brShort(r.date)} (${pname(r.by)})` : ""; })]]);
     sec("POP 6A · Controle de exames de saúde");
     const pd = (pid, id) => (ctx.pdocs||{})[pid+"|"+id];
     const pdef = id => D.PERSON_DOCS.find(x=>x.id===id);
@@ -247,9 +249,9 @@ function vigilancia(ctx, opts){
   const L = ctx.loja;
   T(["Identificação",""], [["Estabelecimento", loja],["Razão social", L.razao||"(preencher)"],["CNPJ", L.cnpj||"(preencher)"],["Endereço", L.endereco||"(preencher)"],["Responsável legal", L.respLegal||"(preencher)"],["Responsável técnico", L.respTecnico||"Não se aplica / (preencher)"],["Período dos registros", per],["Emitido em", `${C.br(todayStr)} às ${C.hm(ctx.now)}`]],
     {0:{fontStyle:"bold", cellWidth:46, fillColor:SOFT}}, {showHead:false, styles:{font:"helvetica", fontSize:8.6, cellPadding:1.8, lineColor:[210,206,196], lineWidth:.15, textColor:INK}});
-  const regs = D.CHECKLISTS.filter(c => c.freq==="daily");
+  const regsOn = d => C.activeCls(d).filter(c => c.freq==="daily");
   let planned=0, ontime=0, late=0, miss=0;
-  days.forEach(d => regs.forEach(c => { const s = C.statusOf(c, idx, d===todayStr ? ctx.now : C.addDays(C.fromYmd(d), 1), C.fromYmd(d)); if(d===todayStr && s.k==="later") return; planned++; if(s.k==="done") ontime++; else if(s.k==="late-done") late++; else if(s.k==="late") miss++; }));
+  days.forEach(d => regsOn(d).forEach(c => { const s = C.statusOf(c, idx, d===todayStr ? ctx.now : C.addDays(C.fromYmd(d), 1), C.fromYmd(d)); if(d===todayStr && s.k==="later") return; planned++; if(s.k==="done") ontime++; else if(s.k==="late-done") late++; else if(s.k==="late") miss++; }));
   const temps = recs.filter(r => { const it = ITEM(r.cl, r.item); return (it && it.t==="temp" && r.v!=="na") || (r.item==="prod" && r.v); });
   const devs = recs.filter(r => C.isDev(r, ITEM(r.cl, r.item)));
   const photos = recs.filter(r => r.photo);
@@ -265,14 +267,15 @@ function vigilancia(ctx, opts){
     const cell = r => r ? `${C.fmtT(r.v)} · ${C.hm(new Date(r.ts))} (${pname(r.by)})` : (d===todayStr ? "Aguardando" : "Não realizado");
     const bad = [m,n].some(r => r && C.isDev(r, ITEM(r.cl,r.item)));
     rows.push([C.br(d), e.nome, C.critText(e), cell(m), cell(n), bad ? "Fora da faixa" : (!m||!n) ? (d===todayStr ? "Em andamento" : "Não realizado") : "Ok"]); }));
-  T(["Data","Equipamento","Critério","Manhã","Noite","Situação"], rows, {0:{cellWidth:18}, 2:{cellWidth:20}});
+  T(["Data","Equipamento","Critério","1ª leitura","2ª leitura","Situação"], rows, {0:{cellWidth:18}, 2:{cellWidth:20}});
   h2("1.2 Alimentos expostos: pista fria e molhos (POP 1A)", "Arts. 60 e 73");
-  const rows2 = []; days.forEach(d => ["expo_m","expo_t","expo_n"].forEach(cl => { const a = idx[`D:${d}|${cl}`]; const c = CL(cl);
+  const rows2 = []; days.forEach(d => ["expo_m","expo_t","expo_n"].filter(cl => C.on(CL(cl), d)).forEach(cl => { const a0 = idx[`D:${d}|${cl}`]; const c = CL(cl);
+    let a = a0 && Object.fromEntries(Object.entries(a0).filter(([k]) => ITEM(cl, k)?.cat === "expo")); if(a && !Object.keys(a).length) a = null;
     if(!a){ if(d===todayStr && C.statusOf(c, idx, ctx.now).k==="later") return; rows2.push([C.br(d), c.turno, "–", "–", "–", d===todayStr ? "Aguardando" : "Não realizado"]); return; }
     const vals = Object.values(a); const bad = vals.filter(r => C.isDev(r, ITEM(r.cl, r.item)));
     rows2.push([C.br(d), c.turno, C.hm(new Date(vals[0].ts)), [...new Set(vals.map(r=>pname(r.by)))].join(", "), `${vals.filter(r=>r.v!=="na").length} itens`, bad.length ? "Fora: " + bad.map(r => `${ITEM(r.cl,r.item).q} ${C.fmtT(r.v)}`).join("; ") : "Ok"]); }));
   T(["Data","Turno","Hora","Responsável","Leituras","Situação"], rows2, {0:{cellWidth:18}, 1:{cellWidth:16}, 2:{cellWidth:12}});
-  para("Critérios do Manual Spoleto: ingredientes da pista fria até 10 °C (pescado até 5 °C), por no máximo 4 horas; molhos no atendimento a no mínimo 60 °C, por no máximo 6 horas. A CVS 3/2026 pede leitura no início e a cada 2 horas a partir de 01/02/2027.", 7.4);
+  para("Critérios do Manual Spoleto: ingredientes da pista fria até 10 °C (pescado até 5 °C), por no máximo 4 horas; molhos no atendimento a no mínimo 60 °C, por no máximo 6 horas. Leituras da loja: manhã (10h às 11h) e tarde (17h às 18h). A CVS 3/2026 pede leitura no início e a cada 2 horas a partir de 01/02/2027.", 7.4);
   h2("1.3 Aquecimento dos molhos na retaguarda", "Arts. 59 e 68");
   T(["Data","Hora","Controle","Critério","Medido","Responsável","Situação"], recs.filter(r=>r.item==="molho_ret").map(r => [C.br(r.date), C.hm(new Date(r.ts)), "Molhos aquecidos (centro)", "mín. 75 °C", C.fmtT(r.v), pname(r.by), C.isDev(r, ITEM(r.cl,r.item)) ? "Fora da faixa" : "Ok"]), {0:{cellWidth:18}});
   h2("1.4 Recebimento de mercadorias (POP 1B)", "Arts. 29 a 31");
@@ -296,7 +299,7 @@ function vigilancia(ctx, opts){
     if(key==="capacit" && (ctx.treinos||[]).length) T(["Data","Treinamento","Instrutor","Participantes"], ctx.treinos.map(t=>[C.br(t.data), t.assunto, t.instrutor, (t.participantes||[]).map(pname).join(", ")]));
     if(key==="manut" && (ctx.manut||[]).length) T(["Equipamento","Desde","Situação","Observação"], ctx.manut.map(m=>[(D.EQUIP.find(e=>e.id===m.equip)||{nome:m.equip}).nome, C.br(m.desde), m.status, m.obs||""]));
     if(docRows.length) T(["Documento de comprovação","Empresa","Último","Próximo","Situação"], docRows, {}, {headStyles:{fillColor:[60,72,98], textColor:255, fontStyle:"bold", fontSize:7.2}});
-    if(!body.length && !docRows.length) para(key==="transp" ? "A loja não faz transporte próprio. Delivery por aplicativo: lacre e identificação conferidos no pré-serviço." : "Sem verificações no período.", 7.6);
+    if(!body.length && !docRows.length) para(key==="transp" ? "A loja não faz transporte próprio. Delivery por aplicativo: lacre e identificação conferidos no pré-serviço (conferência retomada em 01/02/2027, quando a rede enviar o lacre)." : "Sem verificações no período.", 7.6);
   });
 
   h1("3. Não conformidades e ações corretivas");
@@ -305,7 +308,7 @@ function vigilancia(ctx, opts){
   if(oc.length){ h2("Ocorrências registradas pela equipe"); T(["Data e hora","Tipo","Descrição","Resp."], oc.map(r => [`${C.br(r.date)} ${C.hm(new Date(r.ts))}`, (recs.find(x=>x.run===r.run && x.item==="tipo")||{}).v||"", r.v, pname(r.by)])); }
 
   h1("4. Execução das rotinas diárias");
-  const ex = []; days.forEach(d => regs.forEach(c => { const s = C.statusOf(c, idx, d===todayStr ? ctx.now : C.addDays(C.fromYmd(d),1), C.fromYmd(d)); if(d===todayStr && s.k==="later") return;
+  const ex = []; days.forEach(d => regsOn(d).forEach(c => { const s = C.statusOf(c, idx, d===todayStr ? ctx.now : C.addDays(C.fromYmd(d),1), C.fromYmd(d)); if(d===todayStr && s.k==="later") return;
     ex.push([C.br(d), c.title, `${c.start}–${c.due}`, s.last ? C.hm(new Date(s.last.ts)) : "–", [...new Set(Object.values(s.answered).map(r=>pname(r.by)))].join(", ") || "–", `${s.n}/${s.total}`, s.k==="done" ? "No prazo" : s.k==="late-done" ? "Feito com atraso" : s.k==="late" ? (d===todayStr ? "Atrasado" : "Não realizado") : "Em andamento"]); }));
   T(["Data","Rotina","Janela","Concluído","Responsável","Itens","Situação"], ex, {0:{cellWidth:18}, 2:{cellWidth:20}, 3:{cellWidth:16}, 5:{cellWidth:12}});
 

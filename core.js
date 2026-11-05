@@ -53,7 +53,12 @@ function isDev(rec, it){
   if(rec.item==="prod"){ const c = catOf(rec.extra && rec.extra.cat); return c ? outOfRange(c, rec.v) : false; }
   return it ? outOfRange(it, rec.v) : false;
 }
-const requiredItems = cl => cl.items.filter(i => !i.optional);
+/* Vigência por data: checklists e itens podem ter from/until (AAAA-MM-DD). Mantém o histórico certo quando a rotina muda. */
+const dkey = d => typeof d === "string" ? d : ymd(d || new Date());
+const on = (x, d) => { const k = dkey(d); return (!x.from || k >= x.from) && (!x.until || k <= x.until) && !(x.pause && k >= x.pause[0] && k <= x.pause[1]); };
+const activeCls = d => g.DEFS.CHECKLISTS.filter(c => on(c, d));
+const itemsOf = (cl, d) => cl.items.filter(i => on(i, d));
+const requiredItems = (cl, d) => itemsOf(cl, d).filter(i => !i.optional);
 
 /* Índice: último registro por período+checklist+item */
 function indexRecords(records){
@@ -68,7 +73,7 @@ function indexRecords(records){
 function statusOf(cl, idx, now, d){
   d = d || now;
   const per = periodOf(cl, d); const done = idx[per+"|"+cl.id] || {};
-  const req = requiredItems(cl); const n = req.filter(i => done[i.id]).length;
+  const req = requiredItems(cl, d); const n = req.filter(i => done[i.id]).length;
   const [st, due] = windowOf(cl, d);
   const base = {per, n, total:req.length, answered:done, start:st, due};
   if(n>=req.length) {
@@ -95,5 +100,5 @@ function docStatus(last, every, today){
   if(days <= 15) return {k:"warn", label: days===0 ? "Vence hoje" : `Vence em ${days} dia${days>1?"s":""}`, next:ymd(next), days};
   return {k:"ok", label:"Em dia", next:ymd(next), days};
 }
-g.CORE = {pad, ymd, hm, toMin, fromYmd, br, brShort, addDays, monday, lastDay, uid, periodOf, windowOf, num, outOfRange, critText, fmtT, isDev, catOf, indexRecords, statusOf, requiredItems, stars, bolsoScore, docStatus};
+g.CORE = {pad, ymd, hm, toMin, fromYmd, br, brShort, addDays, monday, lastDay, uid, periodOf, windowOf, num, outOfRange, critText, fmtT, isDev, catOf, indexRecords, statusOf, requiredItems, on, activeCls, itemsOf, stars, bolsoScore, docStatus};
 })(typeof window!=="undefined"?window:globalThis);

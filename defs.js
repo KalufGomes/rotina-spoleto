@@ -12,7 +12,8 @@ const LOJA = {
 };
 
 /* Equipe inicial. PIN inicial 1234: o app obriga cada pessoa a criar o próprio PIN no primeiro acesso.
-   papel: equipe (registra no tablet) · admin (gestão da loja) · master (administradora do sistema, Kaluf & Gomes) */
+   papel: equipe (registra no tablet) · admin (gestão da loja) · master (administradora do sistema, Kaluf & Gomes)
+   Pessoas novas desta lista entram sozinhas na planilha quando a gestão abre o app (PIN 1234). */
 const PEOPLE = [
   {id:"taise",   nome:"Taise",    funcao:"Consultora · Kaluf & Gomes", turno:"", papel:"master", notif:false},
   {id:"guilherme", nome:"Guilherme", funcao:"Proprietário", turno:"", papel:"dono", notif:true},
@@ -21,6 +22,7 @@ const PEOPLE = [
   {id:"rose",    nome:"Rose",     funcao:"Auxiliar de cozinha", turno:"7h40–16h",   papel:"equipe"},
   {id:"sabrina", nome:"Sabrina",  funcao:"Auxiliar de cozinha", turno:"10h30–22h30", papel:"equipe"},
   {id:"debora",  nome:"Débora",   funcao:"Auxiliar de cozinha", turno:"10h30–22h30", papel:"equipe"},
+  {id:"joaovitor", nome:"João Vitor", funcao:"Auxiliar de cozinha", turno:"", papel:"equipe"},
 ];
 
 /* Equipamentos (POP 1C e POP 2B). Faixas do POP 01 do manual da rede. */
@@ -50,18 +52,27 @@ const expoItems = () => [
   {id:"i_camarao", t:"temp", q:"Camarão (pescado)", max:5, cat:"expo", grp:"Pista fria", rede:"POP 1A", ref:"Art. 73", na:true},
   ...MOLHOS.map(n => ({id:"m_"+slug(n), t:"temp", q:n, min:60, cat:"expo", grp:"Molhos (banho-maria)", rede:"POP 1A", ref:"Arts. 60 e 73"})),
 ];
-const eqTemp = (id, leitura) => { const e = eq(id); return {id:"eq_"+id, t:"temp", q:`${e.nome}`, sub:`Leitura ${leitura}`, min:e.min, max:e.max, maxEx:e.maxEx, label:e.label, eq:id, leitura, cat:"equip", grp:"Temperatura dos equipamentos", rede:"POP 1C", ref:"Arts. 44 e 48"}; };
+const eqTemp = (id, leitura, extra) => { const e = eq(id); return Object.assign({id:"eq_"+id, t:"temp", q:`${e.nome}`, sub:`Leitura ${leitura === "M" ? "1 (manhã)" : "2 (tarde)"}`, min:e.min, max:e.max, maxEx:e.maxEx, label:e.label, eq:id, leitura, cat:"equip", grp:"Temperatura dos equipamentos", rede:"POP 1C", ref:"Arts. 44 e 48", acoes: id === "camara" ? "camara" : undefined}, extra||{}); };
 
 const ACOES = {
   padrao: ["Produto descartado","Produto devolvido ao fornecedor","Produto segregado e identificado","Produto transferido para outro equipamento","Equipamento inativado e manutenção acionada","Reaquecido até 75 °C","Item refeito e conferido","Manipulador afastado","Outra ação"],
+  camara: ["Produtos mantidos em refrigeração","Produto descartado","Produto segregado e identificado","Produto transferido para outro equipamento","Equipamento inativado e manutenção acionada","Outra ação"],
   pragas: ["Dedetização do shopping acionada","Área isolada e higienizada","Barreira física corrigida (tela, vedação, ralo)","Gerente avisado","Outra ação"],
   hortifruti: ["01 Repetir a lavagem","02 Corrigir dosagem e refazer monitoramento","04 Conferir gramatura e tempo de imersão do fabricante","05 Repetir treinamento","06 Substituir dosador ou produto","07 Armazenar o produto clorado corretamente","Outra ação"],
 };
 
+/* Mudança de rotina de 06/11/2026: itens com until valem até 05/11; itens com from valem a partir de 06/11.
+   Assim o histórico e os relatórios dos dias anteriores continuam certos. */
+const ATE = "2026-11-05", DESDE = "2026-11-06";
+const old = x => Object.assign(x, {until:ATE});
+const nw  = x => Object.assign(x, {from:DESDE});
+const L = (id, q, extra) => Object.assign({id, t:"ok", q, rede:"POP 8A", pop:"higien", ref:"Art. 175"}, extra||{});
+const R = (id, q, extra) => Object.assign({id, t:"ok", q, rede:"Rotina da loja", ref:""}, extra||{});   // reposição e montagem (não entram nos POPs)
+
 /* freq: daily | weekly | monthly | fortnight | ondemand
-   start/due: HH:MM. Semanal: start segunda, due quarta (dueDow=3). */
+   start/due: HH:MM. Semanal: start segunda, due quarta (dueDow=3). pre:"ok" = já vem marcado como Conforme (pode mudar). */
 const CHECKLISTS = [
-  {id:"abertura", title:"Abertura", sub:"Pragas, higiene pessoal, 1ª leitura dos equipamentos e validades", freq:"daily", start:"07:40", due:"08:30", items:[
+  {id:"abertura", title:"Abertura", sub:"Pragas, higiene pessoal, 1ª leitura dos equipamentos de frio e validades", freq:"daily", start:"07:40", due:"08:30", items:[
     {id:"pragas", t:"ok", q:"Ausência de pragas ou indícios (cozinha, estoque e porta externa)", elim:true, acoes:"pragas", rede:"POP 3A", ref:"Arts. 134 e 178", pop:"pragas"},
     {id:"saude", t:"ok", q:"Nenhum manipulador com diarreia, febre, vômito ou ferida exposta. Quem tem sintomas foi afastado e avisou o gerente.", rede:"POP 06", ref:"Arts. 8º a 10", pop:"saude"},
     {id:"uniforme", t:"ok", q:"Uniforme completo da rede: chapéu com rede, sem adornos, maquiagem, esmalte, barba ou celular", rede:"POP 06", ref:"Art. 172", pop:"saude"},
@@ -75,54 +86,57 @@ const CHECKLISTS = [
     {id:"pvps", t:"ok", q:"Estoque organizado por PVPS (primeiro que vence, primeiro que sai), nada no chão", rede:"Manual 15", ref:"Art. 33", pop:"receb"},
     {id:"foto_etiquetas", t:"photo", q:"Foto das etiquetas dos produtos abertos e pré-preparados", rede:"POP 12", ref:"Arts. 37 a 39", pop:"receb"},
   ]},
-  {id:"preservico", title:"Pré-serviço", sub:"1ª leitura da pista fria e banho-maria, molhos e linha de montagem", freq:"daily", start:"09:15", due:"10:00", items:[
-    eqTemp("pista","M"), eqTemp("bmaria","M"), eqTemp("scalda","M"),
+  {id:"preservico", title:"Pré-serviço", sub:"Pista fria, montagem da cozinha, molhos e linha de montagem", freq:"daily", start:"09:15", due:"10:00", items:[
+    eqTemp("pista","M"), old(eqTemp("bmaria","M")), old(eqTemp("scalda","M")),
+    nw(R("montar_forno", "Montar forno (com grades)", {grp:"Montagem da cozinha"})),
+    nw(R("montar_bm", "Montar banho-maria (com conchas e panela)", {grp:"Montagem da cozinha"})),
+    nw(R("molho_aquecer", "Colocar molho para aquecer", {grp:"Cocção e aquecimento"})),
     {id:"molho_ret", t:"temp", q:"Molhos aquecidos na retaguarda (centro do produto)", min:75, cat:"coc", grp:"Cocção e aquecimento", rede:"POP 01", ref:"Arts. 59 e 68"},
-    {id:"sobras", t:"ok", q:"Sobras de molho de ontem com etiqueta \"sobra\" (uso até o almoço) ou descartadas", na:true, rede:"Manual 17", ref:"Art. 39", pop:"receb"},
-    {id:"descong", t:"ok", q:"Descongelamento sob refrigeração (até 4 °C), identificado e com dreno", na:true, rede:"Manual 16.1", ref:"Art. 53", pop:"receb"},
-    {id:"marinada", t:"ok", q:"Marinados sob refrigeração a até 4 °C (cogumelos e frango 12 h, camarão 3 h)", na:true, rede:"Manual 16.3", ref:"Art. 44", pop:"receb"},
-    {id:"equip_desmont", t:"ok", q:"Masseira, mixer e utensílios desmontáveis higienizados", rede:"POP 08", ref:"Art. 115", pop:"higien"},
-    {id:"contaminacao", t:"ok", q:"Alimentos protegidos contra contaminação cruzada; perecíveis fora do frio por no máximo 30 min", rede:"POP 7A", ref:"Art. 55", pop:"higien"},
-    {id:"delivery", t:"ok", q:"Embalagens de delivery com lacre e a frase \"Produto para consumo imediato.\"", na:true, rede:"—", ref:"Arts. 112 e 113", pop:"transp"},
-    {id:"foto_linha", t:"photo", q:"Foto da pista fria montada e protegida", rede:"POP 7A", ref:"Arts. 69 a 71", pop:"higien"},
+    {id:"sobras", t:"ok", q:"Sobras de molho de ontem com etiqueta \"sobra\" (uso até o almoço) ou descartadas", na:true, grp:"Cocção e aquecimento", rede:"Manual 17", ref:"Art. 39", pop:"receb"},
+    {id:"descong", t:"ok", q:"Descongelamento (pista fria) sob refrigeração (até 4 °C), identificado e com dreno", na:true, grp:"Linha de montagem", rede:"Manual 16.1", ref:"Art. 53", pop:"receb"},
+    old({id:"marinada", t:"ok", q:"Marinados sob refrigeração a até 4 °C (cogumelos e frango 12 h, camarão 3 h)", na:true, rede:"Manual 16.3", ref:"Art. 44", pop:"receb"}),
+    {id:"equip_desmont", t:"ok", q:"Masseira, mixer e utensílios desmontáveis higienizados", pre:"ok", grp:"Linha de montagem", rede:"POP 08", ref:"Art. 115", pop:"higien"},
+    {id:"contaminacao", t:"ok", q:"Alimentos protegidos contra contaminação cruzada; perecíveis fora do frio no máx. 30 min", pre:"ok", grp:"Linha de montagem", rede:"POP 7A", ref:"Art. 55", pop:"higien"},
+    {id:"delivery", t:"ok", q:"Embalagens de delivery com lacre e a frase \"Produto para consumo imediato.\"", na:true, pause:[DESDE, "2027-01-31"], grp:"Linha de montagem", rede:"—", ref:"Arts. 112 e 113", pop:"transp"},
+    {id:"foto_linha", t:"photo", q:"Foto da pista fria montada e protegida", grp:"Linha de montagem", rede:"POP 7A", ref:"Arts. 69 a 71", pop:"higien"},
   ]},
-  {id:"expo_m", title:"Pista fria e molhos · manhã", sub:"POP 1A: temperatura dos alimentos expostos", freq:"daily", start:"10:40", due:"11:10", compact:true, turno:"MANHÃ", items:expoItems()},
-  {id:"expo_t", title:"Pista fria e molhos · tarde", sub:"POP 1A: temperatura dos alimentos expostos", freq:"daily", start:"14:00", due:"14:30", compact:true, turno:"TARDE", items:expoItems()},
-  {id:"expo_n", title:"Pista fria e molhos · noite", sub:"POP 1A: temperatura dos alimentos expostos", freq:"daily", start:"19:00", due:"19:30", compact:true, turno:"NOITE", items:expoItems()},
+  {id:"expo_m", title:"Pista fria e molhos · manhã", sub:"POP 1A e 1C: alimentos expostos, banho-maria e scalda massa", freq:"daily", start:"10:00", due:"11:00", compact:true, turno:"MANHÃ", items:[
+    ...expoItems(), nw(eqTemp("bmaria","M")), nw(eqTemp("scalda","M"))]},
+  {id:"expo_t", title:"Pista fria e molhos · tarde", sub:"POP 1A e 1C: alimentos expostos e 2ª leitura dos equipamentos", freq:"daily", start:"17:00", due:"18:00", compact:true, turno:"TARDE", items:[
+    ...expoItems(), ...["camara","geladeira","balcao","freezer","pista","bmaria","scalda"].map(id => nw(eqTemp(id,"N")))]},
+  {id:"expo_n", title:"Pista fria e molhos · noite", sub:"POP 1A: temperatura dos alimentos expostos", freq:"daily", start:"19:00", due:"19:30", compact:true, turno:"NOITE", until:ATE, items:expoItems()},
   {id:"limp_m", title:"Limpeza da manhã", sub:"POP 8A", freq:"daily", start:"10:00", due:"11:30", items:[
-    {id:"piso", t:"ok", q:"Piso e rodapé", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"bancadas", t:"ok", q:"Bancadas", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"balanca", t:"ok", q:"Balança (se usada)", na:true, rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"geladeira_beb", t:"ok", q:"Geladeira de bebidas", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
+    L("piso","Piso e rodapé"), L("bancadas","Bancadas"), L("balanca","Balança (se usada)", {na:true}), L("geladeira_beb","Geladeira de bebidas"),
+    nw(L("balcao_frente","Limpeza do balcão da frente")), nw(L("bandeja_talheres","Bandeja e talheres")), nw(R("temperos","Bandeja de temperos (abastecer)")),
   ]},
   {id:"limp_t", title:"Limpeza da tarde", sub:"POP 8A", freq:"daily", start:"15:00", due:"16:00", items:[
-    {id:"piso", t:"ok", q:"Piso e rodapé", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"lixo", t:"ok", q:"Lixo retirado; lixeiras com tampa e pedal, forradas", rede:"POP 04", pop:"residuos", ref:"Art. 179"},
+    L("piso","Piso e rodapé"), {id:"lixo", t:"ok", q:"Lixo retirado; lixeiras com tampa e pedal, forradas", rede:"POP 04", pop:"residuos", ref:"Art. 179"},
+    nw(L("balcao","Balcão")), nw(L("fogao","Fogão")), nw(L("maq_lavar","Máquina de lavar")), nw(L("frigideiras","Frigideiras")),
+    nw(L("pratos","Pratos")), nw(L("bandejas","Bandejas")), nw(L("talheres","Talheres")), nw(R("abastecer_loja","Abastecer a loja")),
   ]},
-  {id:"fechamento", title:"Fechamento", sub:"Pragas, 2ª leitura dos equipamentos e limpeza diária", freq:"daily", start:"21:45", due:"22:30", items:[
+  {id:"fechamento", title:"Fechamento", sub:"Pragas, limpeza diária e reposição", freq:"daily", start:"21:45", due:"22:30", items:[
     {id:"pragas", t:"ok", q:"Ausência de pragas ou indícios (cozinha, estoque e porta externa)", elim:true, acoes:"pragas", rede:"POP 3A", ref:"Arts. 134 e 178", pop:"pragas"},
-    eqTemp("camara","N"), eqTemp("geladeira","N"), eqTemp("balcao","N"), eqTemp("freezer","N"), eqTemp("pista","N"), eqTemp("bmaria","N"), eqTemp("scalda","N"),
+    ...["camara","geladeira","balcao","freezer","pista","bmaria","scalda"].map(id => old(eqTemp(id,"N"))),
     {id:"sobras_n", t:"ok", q:"Sobras de molho: etiqueta \"sobra\" e nome do produto, ou descarte", na:true, rede:"Manual 17", ref:"Art. 39", pop:"receb"},
-    {id:"piso", t:"ok", q:"Piso e rodapé", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"bancadas", t:"ok", q:"Bancadas", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"pista_l", t:"ok", q:"Pista fria higienizada", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"forno_in", t:"ok", q:"Forno por dentro", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"frigideiras", t:"ok", q:"Frigideiras", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"ralos", t:"ok", q:"Ralos", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"tabuas", t:"ok", q:"Tábuas de corte higienizadas", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
-    {id:"lixo", t:"ok", q:"Lixo retirado; lixeiras forradas", rede:"POP 04", pop:"residuos", ref:"Art. 179"},
-    {id:"ligados", t:"ok", q:"Refrigeradores e freezer ligados e bem fechados", rede:"Manual 15", ref:"Art. 43", pop:"manut"},
-    {id:"foto_fech", t:"photo", q:"Foto da cozinha fechada", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
+    L("piso","Piso e rodapé", {grp:"Limpeza"}), L("bancadas","Bancadas", {grp:"Limpeza"}), L("pista_l","Pista fria higienizada", {grp:"Limpeza"}),
+    nw(L("balcao_frente","Limpeza do balcão da frente", {grp:"Limpeza"})), nw(L("balcao","Balcão", {grp:"Limpeza"})), nw(L("fogao","Fogão", {grp:"Limpeza"})), nw(L("maq_lavar","Máquina de lavar", {grp:"Limpeza"})),
+    old(L("forno_in","Forno por dentro")), L("frigideiras","Frigideiras", {grp:"Limpeza"}),
+    nw(L("pratos","Pratos", {grp:"Limpeza"})), nw(L("bandejas","Bandejas", {grp:"Limpeza"})), nw(L("talheres","Talheres", {grp:"Limpeza"})), nw(L("bandeja_talheres","Bandeja e talheres", {grp:"Limpeza"})),
+    nw(L("temperos","Bandeja de temperos (limpar)", {grp:"Limpeza"})),
+    L("ralos","Ralos", {grp:"Limpeza"}), L("tabuas","Tábuas de corte higienizadas", {grp:"Limpeza"}),
+    {id:"lixo", t:"ok", q:"Lixo retirado; lixeiras forradas", grp:"Limpeza", rede:"POP 04", pop:"residuos", ref:"Art. 179"},
+    nw(R("abastecer_loja","Abastecer a loja", {grp:"Reposição"})), nw(R("abastecer_bebidas","Abastecer a geladeira de bebidas", {grp:"Reposição"})),
+    {id:"ligados", t:"ok", q:"Refrigeradores e freezer ligados e bem fechados", grp:"Ao sair", rede:"Manual 15", ref:"Art. 43", pop:"manut"},
+    old({id:"foto_fech", t:"photo", q:"Foto da cozinha fechada", rede:"POP 8A", pop:"higien", ref:"Art. 175"}),
   ]},
   {id:"semanal", title:"Limpeza semanal", sub:"POP 8A · fazer de segunda a quarta (cada item pode ser feito por uma pessoa)", freq:"weekly", start:"07:40", due:"22:30", dueDow:3, items:[
-    ["balcao_ref","Balcão refrigerado"],["dispensers","Dispensers de sabonete e álcool"],["estoque","Estoque seco"],["estrados","Estrados e prateleiras do estoque"],
-    ["forno_fora","Forno por fora"],["freezer_l","Freezer"],["interruptores","Interruptores e tomadas"],["lixeiras","Lixeiras (lavagem)"],["organizadores","Organizadores"],
-    ["paredes","Paredes"],["portas","Portas"],["prateleiras_frente","Prateleiras da frente de loja"],["teto","Teto"],["gelo_l","Máquina de gelo"],
-  ].map(([id,q])=>({id, t:"ok", q, rede:"POP 8A", pop:"higien", ref:"Art. 175"})).concat([
-    {id:"retrolavagem", t:"ok", q:"Retrolavagem do filtro de água", rede:"POP 5A", pop:"agua", ref:"Art. 123"},
-  ])},
-  {id:"mensal", title:"Limpeza mensal", sub:"POP 8A", freq:"monthly", start:"07:40", due:"22:30", items:[
-    {id:"luminarias", t:"ok", q:"Luminárias", rede:"POP 8A", pop:"higien", ref:"Art. 175"},
+    L("balcao_ref","Balcão refrigerado"), L("dispensers","Dispensers de sabonete e álcool"), L("estoque","Estoque seco"), L("estrados","Estrados e prateleiras do estoque"),
+    L("forno_fora","Forno (limpeza interna e externa)"), L("freezer_l","Freezer"), L("interruptores","Interruptores e tomadas"), L("lixeiras","Lixeiras (lavagem)"), L("organizadores","Organizadores"),
+    L("paredes","Paredes"), old(L("portas","Portas")), L("prateleiras_frente","Prateleiras da frente de loja"), L("teto","Teto"), L("gelo_l","Máquina de gelo"),
+    old({id:"retrolavagem", t:"ok", q:"Retrolavagem do filtro de água", rede:"POP 5A", pop:"agua", ref:"Art. 123"}),
+  ]},
+  {id:"mensal", title:"Limpeza mensal", sub:"POP 8A · feita pela equipe", freq:"monthly", start:"07:40", due:"22:30", items:[
+    L("luminarias","Luminárias"), nw(L("portas","Portas")), nw(L("coifa","Coifa")),
   ]},
   {id:"bolso", title:"Checklist de Bolso", sub:"POP 7A · autoavaliação quinzenal com nota em estrelas", freq:"fortnight", start:"07:40", due:"22:30", leaderOnly:true, bolso:true, items:[
     ["d1","Gestão e documentação","Certificado de dedetização mensal válido, de empresa registrada"],
@@ -221,6 +235,21 @@ const PERSON_DOC_SEED = {"sabrina|uniforme":"2026-07-18"};
 /* Equipamentos em manutenção (POP 2A) */
 const MANUT_SEED = [{id:"m1", equip:"ralador", desde:"2026-10-25", status:"Em manutenção", obs:"Máquina de ralar queijo com placa POP 2A", empresa:""}];
 
+/* Tarefas do dia (lista da subgerente). A gestão marca o que entra no dia; a quantidade vem sugerida e pode ser mudada. */
+const TAREFAS = [
+  ["PISTA", ["ALHO","4 PACOTES"],["CEBOLA","1 POTE GRANDE"],["PEITO DE PERU","1 POTE PEQ"],["PRESUNTO","1 POTE PEQ"],["CALABRESA","2 PACOTES"],["BACON","6 PACOTES"],["PESTO DE AZEITONA","1 POTE PEQ"],["COGUMELO","1 PACOTE"],["GORGONZOLA","1 POTE"],["MUSSARELA","1 PEÇA"],["RICOTA","1 PEÇA"],["OVO","1 PACOTE"],["TOMATE ASSADO","2 BOWLS CHEIOS"],["TOMATE","2 POTES PEQ"],["ALHO PORÓ","1 POTE GRANDE"],["BRÓCOLIS","1 POTE GRANDE OU 1 PACOTE"],["PALMITO","1 POTE PEQUENO OU 1 PACOTE"],["ESPINAFRE","O QUE VIER"],["MANJERICÃO","O QUE VIER"],["MIX DE ERVAS","O QUE VIER"],["CENOURA","1 POTE PEQ"],["CEBOLA CARAMELIZADA","1 BOWL"],["PARMESÃO","½ PEÇA OU 3 POTES GRANDES"],["REQUEIJÃO","1 BISNAGA"],["SALADA","O QUE VIER"]],
+  ["PROTEÍNA", ["CAMARÃO","4 K POR SEMANA"],["COSTELA","4 K"],["ALMÔNDEGA","4 K"],["TIRAS DE FRANGO","12 PACOTES"],["FILÉ DE FRANGO","10 K"],["FRANGO EMPANADO","1 POTE GRANDE"],["POLPETONE","10 UNIDADES"],["FRANGO DESFIADO","2 PACOTES"]],
+  ["MASSA (COZINHAR)", ["FETUCCINE","2 PACOTES"],["PENNE","2 PACOTES"],["ESPAGUETE","2 PACOTES"],["FARFALLE","1 PACOTE"],["PENNE INTEGRAL","½ PACOTE"],["RISOTO","4 PACOTES"],["LASANHA","1 PACOTE"],["PIZZA","7 UNIDADES MUSSARELA E 4 DE CALABRESA"],["RAVIOLI CONGELADO","5 PACOTES"]],
+  ["MOLHOS", ["MOSTARDA E MEL","1 BISNAGA"],["CAESAR","2 BISNAGAS"]],
+].flatMap(([sec, ...list]) => list.map(([nome, qtd]) => ({id: slug(sec.split(" ")[0] + "_" + nome), sec, nome, qtd})));
+const TAREFA_MODOS = ["Preparar", "Conferir etiqueta"];
+
+/* Lembretes com data marcada: aparecem no painel da gestão e chegam no celular das pessoas indicadas. */
+const LEMBRETES = [
+  {id:"lacre-2027", data:"2027-01-15", para:["taise","vagner","manu"], titulo:"Lacre do delivery", texto:"Confirmar se a franquia enviou o lacre das embalagens de delivery. O item do lacre volta sozinho ao pré-serviço em 01/02/2027."},
+  {id:"cvs3-2h-2027", data:"2027-01-11", para:["taise","vagner","manu"], titulo:"Temperatura da pista fria a cada 2 horas", texto:"A partir de 01/02/2027 a CVS 3/2026 pede leitura da pista fria e dos molhos no início e a cada 2 horas. Hoje são 2 leituras (10h–11h e 17h–18h). Rever os horários com a Kaluf & Gomes."},
+];
+
 /* Escala de estrelas da auditoria da rede (Manual, item 22) */
 /* Notificações padrão por perfil (cada pessoa pode ajustar; a administradora ajusta de todos) */
 const NOTIF_DEFAULTS = {
@@ -230,5 +259,5 @@ const NOTIF_DEFAULTS = {
 };
 const STARS = [[95,5],[86,4],[77,3],[67,2],[57,1],[0,0]];
 
-g.DEFS = {NOTIF_DEFAULTS, LOJA, PEOPLE, EQUIP, PISTA, MOLHOS, CHECKLISTS, ACOES, FORNECEDORES, CATEG, DOCS, PERSON_DOCS, PERSON_DOC_SEED, MANUT_SEED, STARS, VERSION:"2026.10.25"};
+g.DEFS = {NOTIF_DEFAULTS, LOJA, PEOPLE, EQUIP, PISTA, MOLHOS, CHECKLISTS, ACOES, FORNECEDORES, CATEG, DOCS, PERSON_DOCS, PERSON_DOC_SEED, MANUT_SEED, STARS, TAREFAS, TAREFA_MODOS, LEMBRETES, VERSION:"2026.11.06"};
 })(typeof window!=="undefined"?window:globalThis);

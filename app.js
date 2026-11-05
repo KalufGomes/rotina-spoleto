@@ -9,7 +9,7 @@ const ITEM = (cl, id) => (CL(cl)?.items || []).find(i => i.id === id);
 
 const ST = {
   view: ls.get("rotina-view", "team"), tab: "hoje",
-  people: [], owners: {}, docs: [], pdocs: {}, manut: [], loja: {}, treinos: [], records: [], idx: {},
+  people: [], owners: {}, docs: [], pdocs: {}, manut: [], loja: {}, treinos: [], records: [], idx: {}, tarefas: {},
   device: ls.get("rotina-device", null),     // sessão do aparelho (tablet)
   admin: ls.get("rotina-admin", null),       // sessão lembrada do gestor (celular)
   person: null,                              // sessão curta de quem está registrando
@@ -33,12 +33,15 @@ function fromDate(){ const n = new Date(); const a = C.addDays(n, -13); const m 
 async function load(){
   try{
     const b = await A.bootstrap(token(), fromDate());
-    Object.assign(ST, {people:b.people||[], owners:b.owners||{}, docs:b.docs||[], pdocs:b.pdocs||{}, manut:b.manut||[], loja:{...D.LOJA, ...(b.loja||{})}, treinos:b.treinos||[], records:b.records||[]});
+    Object.assign(ST, {people:b.people||[], owners:b.owners||{}, docs:b.docs||[], pdocs:b.pdocs||{}, manut:b.manut||[], loja:{...D.LOJA, ...(b.loja||{})}, treinos:b.treinos||[], records:b.records||[], tarefas:b.tarefas||{}});
     ST.idx = C.indexRecords(ST.records); ST.loaded = true; ST.error = "";
     if(!isDemo && isAdmin() && canEdit() && b.defsVersion !== D.VERSION){
       const defs = {version: D.VERSION,
-        checklists: D.CHECKLISTS.filter(c => c.freq !== "ondemand").map(c => ({id: c.id, title: c.title, freq: c.freq, start: c.start, due: c.due, dueDow: c.dueDow || null, leaderOnly: !!c.leaderOnly, req: C.requiredItems(c).map(i => i.id)})),
-        docs: D.DOCS.map(d => ({id: d.id, tipo: d.tipo, every: d.every})), personDocs: D.PERSON_DOCS.map(d => ({id: d.id, tipo: d.tipo, every: d.every}))};
+        checklists: D.CHECKLISTS.filter(c => c.freq !== "ondemand").map(c => ({id: c.id, title: c.title, freq: c.freq, start: c.start, due: c.due, dueDow: c.dueDow || null, leaderOnly: !!c.leaderOnly, from: c.from || null, until: c.until || null,
+          req: c.items.filter(i => !i.optional).map(i => (i.from || i.until || i.pause) ? {id: i.id, from: i.from || null, until: i.until || null, pause: i.pause || null} : i.id)})),
+        docs: D.DOCS.map(d => ({id: d.id, tipo: d.tipo, every: d.every})), personDocs: D.PERSON_DOCS.map(d => ({id: d.id, tipo: d.tipo, every: d.every})),
+        people: D.PEOPLE.filter(p => p.papel === "equipe").map(p => ({id: p.id, nome: p.nome, apelido: p.apelido || "", funcao: p.funcao, turno: p.turno || ""})),
+        lembretes: D.LEMBRETES};
       A.admin("setDefs", adminToken(), defs).catch(() => {});
     }
   }catch(e){
@@ -47,13 +50,13 @@ async function load(){
   }
   render();
 }
-setInterval(() => { if(!ST.current && document.visibilityState === "visible") load(); }, 120000);
-setInterval(() => { if(!ST.current) renderHeaderOnly(); checkAlerts(); }, 30000);
+setInterval(() => { if(!ST.current && !ST.tarefasOpen && !ST.tdraft && document.visibilityState === "visible") load(); }, 120000);
+setInterval(() => { if(!ST.current && !ST.tarefasOpen) renderHeaderOnly(); checkAlerts(); }, 30000);
 window.addEventListener("online", async () => { await A.flush(token()); load(); });
 
 /* ---------- sessão curta (quem está registrando) ---------- */
 let idleTimer = null;
-function touch(){ clearTimeout(idleTimer); if(ST.person && !ST.person.remember) idleTimer = setTimeout(() => { ST.person = null; ST.current = null; render(); toast("Sessão encerrada por inatividade."); }, 5*60*1000); }
+function touch(){ clearTimeout(idleTimer); if(ST.person && !ST.person.remember) idleTimer = setTimeout(() => { ST.person = null; ST.current = null; ST.tarefasOpen = false; render(); toast("Sessão encerrada por inatividade."); }, 5*60*1000); }
 document.addEventListener("pointerdown", touch, {passive:true});
 
 /* ---------- avisos no tablet ---------- */
@@ -67,7 +70,7 @@ function beep(){
 }
 function counts(){
   const now = new Date(); let late = 0, open = 0;
-  D.CHECKLISTS.filter(c => c.freq !== "ondemand" && !c.leaderOnly).forEach(c => { const s = C.statusOf(c, ST.idx, now); if(s.k === "late") late++; else if(s.k === "open" || s.k === "partial") open++; });
+  C.activeCls(now).filter(c => c.freq !== "ondemand" && !c.leaderOnly).forEach(c => { const s = C.statusOf(c, ST.idx, now); if(s.k === "late") late++; else if(s.k === "open" || s.k === "partial") open++; });
   return {late, open};
 }
 function checkAlerts(){
@@ -196,6 +199,7 @@ function render(){
   if(!ST.loaded && !ST.error){ app().innerHTML = header() + `<main><p class="sub">Carregando…</p></main>`; bindHeader(); return; }
   if(ST.view === "mgr" && !isAdmin()){ ST.view = "team"; }
   if(ST.current) return renderRun();
+  if(ST.tarefasOpen && ST.view === "team") return renderTarefasTeam();
   if(ST.view === "mgr") return renderMgr();
   renderTeam();
 }
@@ -204,7 +208,7 @@ function render(){
 function ownersOf(clId){ const o = ST.owners[clId]; return o && o.owners && o.owners.length ? o.owners : null; }
 function renderTeam(){
   const now = new Date(), me = ST.person && ST.person.person;
-  const regular = D.CHECKLISTS.filter(c => c.freq !== "ondemand");
+  const regular = C.activeCls(now).filter(c => c.freq !== "ondemand");
   const rows = regular.map(c => ({c, s: C.statusOf(c, ST.idx, now)})).filter(x => !x.c.leaderOnly || EDIT(me) || x.s.k === "done");
   const mine = x => me && ownersOf(x.c.id) && ownersOf(x.c.id).includes(me.id);
   const sortK = x => (mine(x) ? 0 : 1)*10 + ({late:0, partial:1, open:2, later:3, "late-done":4, done:5})[x.s.k];
@@ -239,6 +243,7 @@ function renderTeam(){
         <button class="qbtn danger" data-od="ocorrencia"><b>Ocorrência</b><small>Praga, defeito, outro</small></button>
       </div>
     </section>
+    ${tarefasCard(now)}
     ${now_.length ? `<h2 class="sec">Para fazer agora</h2><div class="list">${now_.map(card).join("")}</div>` : ""}
     ${later.length ? `<h2 class="sec">Mais tarde</h2><div class="list">${later.map(card).join("")}</div>` : ""}
     ${done.length ? `<h2 class="sec">Feito</h2><div class="list done-list">${done.map(card).join("")}</div>` : ""}
@@ -249,6 +254,7 @@ function renderTeam(){
   $("#snd").onclick = () => { ST.sound = !ST.sound; if(ST.sound) beep(); render(); };
   app().querySelectorAll("[data-cl]").forEach(b => b.onclick = () => openChecklist(b.dataset.cl));
   app().querySelectorAll("[data-od]").forEach(b => b.onclick = () => openChecklist(b.dataset.od));
+  const tc = $("#tarefas-open"); if(tc) tc.onclick = async () => { if(!(await ensurePerson({}))) return; ST.tarefasOpen = true; render(); window.scrollTo(0,0); };
 }
 async function ensurePerson(cl){
   if(ST.person) return true;
@@ -259,7 +265,56 @@ async function openChecklist(id){
   const cl = CL(id); if(!(await ensurePerson(cl))) return;
   if(cl.leaderOnly && !EDIT(ST.person.person)){ toast("Só o gerente ou a subgerente aplicam o Checklist de Bolso.", "bad"); return; }
   ST.current = cl; ST.draft = {items:{}, prods: cl.receb ? [{produto:"", cat:"", v:""}] : [], extra:{}};
+  /* itens que já vêm marcados como Conforme (a pessoa pode mudar) */
+  const per = cl.freq === "ondemand" ? null : C.periodOf(cl, new Date()), prev = per ? (ST.idx[per + "|" + cl.id] || {}) : {};
+  C.itemsOf(cl, new Date()).forEach(it => { if(it.pre && !prev[it.id]) ST.draft.items[it.id] = {v: it.pre}; });
   render(); window.scrollTo(0,0);
+}
+
+/* ================= TAREFAS DO DIA (tablet) ================= */
+const tarefasDe = date => { const t = ST.tarefas[date]; return t && t.itens && t.itens.length ? t : null; };
+function tarefasCard(now){
+  const t = tarefasDe(C.ymd(now)); if(!t) return "";
+  const feitos = t.itens.filter(i => i.feito).length, tot = t.itens.length, ok = feitos === tot;
+  return `<h2 class="sec">Tarefas do dia</h2><div class="list"><button class="cl ${ok ? "" : "open"}" id="tarefas-open">
+    <span class="time">LISTA</span>
+    <span class="cl-main"><b>Tarefas do dia</b><small>${tot} ${tot > 1 ? "itens" : "item"} para preparar ou conferir · lançada por ${esc(pname(t.por))}</small>
+    <span class="bar"><i style="width:${Math.round(feitos / tot * 100)}%"></i></span></span>
+    <span class="pill p-${ok ? "ok" : "warn"}">${ok ? "Tudo feito" : `${feitos}/${tot} feitos`}</span></button></div>`;
+}
+function tarefaRowHTML(i, interactive){
+  const me = ST.person && ST.person.person;
+  const podeDesfazer = i.feito && me && (i.feito.by === me.id || EDIT(me));
+  return `<div class="card item tar ${i.feito ? "done" : ""}">
+    <div class="item-top"><p>${esc(i.nome)}<small class="isub"><b class="qtd">${esc(i.qtd || "")}</b>${i.resp ? ` · para ${esc(pname(i.resp))}` : ""}</small></p><span class="pill ${i.modo === "Conferir etiqueta" ? "p-warn" : "p-idle"}">${esc(i.modo || "Preparar")}</span></div>
+    ${i.obs ? `<p class="tar-obs">${esc(i.obs)}</p>` : ""}
+    ${i.feito ? `<div class="tar-foot"><span class="pill p-ok">Feito por ${esc(pname(i.feito.by))} às ${C.hm(new Date(i.feito.at))}</span>${interactive && podeDesfazer ? `<button class="btn ghost sm" data-tdes="${i.id}">Desfazer</button>` : ""}</div>`
+      : interactive ? `<div class="choice"><button class="c-ok" data-tok="${i.id}">${i.modo === "Conferir etiqueta" ? "Conferido" : "Feito"}</button></div>` : ""}
+  </div>`;
+}
+function renderTarefasTeam(){
+  const now = new Date(), date = C.ymd(now), t = tarefasDe(date), me = ST.person && ST.person.person;
+  if(!t || !me){ ST.tarefasOpen = false; return render(); }
+  const secs = [...new Set(t.itens.map(i => i.sec))];
+  const feitos = t.itens.filter(i => i.feito).length;
+  app().innerHTML = header() + `<main>
+    <div class="run-head">
+      <div><span class="eyebrow">${C.br(date)} · ${esc(me.apelido || me.nome)}</span><h1>Tarefas do dia</h1>
+      <p class="sub">Lançada por ${esc(pname(t.por))} · <span class="num">${feitos}/${t.itens.length}</span> feitos. Toque em Feito quando terminar: fica registrado seu nome e a hora.</p></div>
+      <button class="btn ghost" id="back">Voltar</button>
+    </div>
+    ${secs.map(sec => `<h2 class="sec">${esc(sec)}</h2><div class="items">${t.itens.filter(i => i.sec === sec).map(i => tarefaRowHTML(i, true)).join("")}</div>`).join("")}
+  </main>`;
+  bindHeader();
+  $("#back").onclick = () => { ST.tarefasOpen = false; render(); };
+  const mark = async (id, feito, btn) => {
+    btn.disabled = true;
+    try{ const r = await A.tarefa(ST.person.token, {date, id, feito}); const it = t.itens.find(x => x.id === id); it.feito = r.feito || null; toast(feito ? "Registrado." : "Desfeito.", "ok"); }
+    catch(e){ if(e.code === "auth"){ ST.person = null; ST.tarefasOpen = false; toast("Sua sessão expirou. Entre de novo com o PIN.", "bad"); return render(); } toast("Não foi possível salvar: " + e.message, "bad"); }
+    const y = window.scrollY; renderTarefasTeam(); window.scrollTo(0, y);
+  };
+  app().querySelectorAll("[data-tok]").forEach(b => b.onclick = () => mark(b.dataset.tok, true, b));
+  app().querySelectorAll("[data-tdes]").forEach(b => b.onclick = () => mark(b.dataset.tdes, false, b));
 }
 
 /* ================= EXECUÇÃO ================= */
@@ -285,7 +340,7 @@ function prodValid(p){
 function runState(){
   const cl = ST.current, per = cl.freq === "ondemand" ? null : C.periodOf(cl, new Date());
   const prev = per ? (ST.idx[per + "|" + cl.id] || {}) : {};
-  const pend = cl.items.filter(i => !prev[i.id]);
+  const pend = C.itemsOf(cl, new Date()).filter(i => !prev[i.id]);
   const valid = pend.filter(i => itemValid(i, ST.draft.items[i.id]));
   const touched = pend.filter(i => ST.draft.items[i.id] && (ST.draft.items[i.id].v || ST.draft.items[i.id].photo));
   const invalidTouched = touched.filter(i => !itemValid(i, ST.draft.items[i.id]));
@@ -294,10 +349,10 @@ function runState(){
 function renderRun(){
   const cl = ST.current, me = ST.person.person, {prev, pend, valid, invalidTouched} = runState();
   const od = cl.freq === "ondemand";
-  const req = C.requiredItems(cl);
+  const req = C.requiredItems(cl, new Date());
   const doneN = req.filter(i => prev[i.id]).length;
   const groups = [];
-  cl.items.forEach(it => { const g = it.grp || ""; let G = groups.find(x => x.g === g); if(!G) groups.push(G = {g, items:[]}); G.items.push(it); });
+  C.itemsOf(cl, new Date()).forEach(it => { const g = it.grp || ""; let G = groups.find(x => x.g === g); if(!G) groups.push(G = {g, items:[]}); G.items.push(it); });
   const prodsOk = !cl.receb || (ST.draft.extra.fornecedor && ST.draft.prods.length && ST.draft.prods.every(prodValid));
   const canSave = od ? (cl.items.filter(i => !i.optional).every(i => itemValid(i, ST.draft.items[i.id])) && prodsOk) : (valid.length > 0 && invalidTouched.length === 0);
   app().innerHTML = header() + `<main>
@@ -432,13 +487,13 @@ async function saveRun(){
 
 /* ================= GESTÃO ================= */
 function renderMgr(){
-  const tabs = [["hoje","Hoje"],["hist","Histórico"],["docs","Documentos"],["rel","Relatórios"],["cfg","Configurações"]];
+  const tabs = [["hoje","Hoje"],["tar","Tarefas do dia"],["hist","Histórico"],["docs","Documentos"],["rel","Relatórios"],["cfg","Configurações"]];
   app().innerHTML = header() + `<main>
     <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${ST.tab === k}">${l}</button>`).join("")}</nav>
     <div id="tab"></div></main>`;
   bindHeader();
-  app().querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ST.tab = b.dataset.tab; renderMgr(); });
-  ({hoje: tabHoje, hist: tabHist, docs: tabDocs, rel: tabRel, cfg: tabCfg})[ST.tab]();
+  app().querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { if(ST.tab !== b.dataset.tab) ST.tdraft = null; ST.tab = b.dataset.tab; renderMgr(); });
+  ({hoje: tabHoje, tar: tabTarefas, hist: tabHist, docs: tabDocs, rel: tabRel, cfg: tabCfg})[ST.tab]();
 }
 const T = () => $("#tab");
 function allDocStatus(){
@@ -449,7 +504,7 @@ function allDocStatus(){
 }
 function tabHoje(){
   const now = new Date(), today = C.ymd(now);
-  const regs = D.CHECKLISTS.filter(c => c.freq !== "ondemand");
+  const regs = C.activeCls(now).filter(c => c.freq !== "ondemand");
   const st = regs.map(c => ({c, s: C.statusOf(c, ST.idx, now)}));
   const daily = st.filter(x => x.c.freq === "daily");
   const doneN = daily.filter(x => x.s.k === "done" || x.s.k === "late-done").length;
@@ -474,27 +529,30 @@ function tabHoje(){
       <div class="card kpi ${devs.length ? "bad" : ""}"><span class="eyebrow">Não conformidades</span><div class="v">${devs.length}</div></div>
       <div class="card kpi ${docs.length ? "warn" : ""}"><span class="eyebrow">Documentos a resolver</span><div class="v">${docs.length}</div></div>
     </div>
+    ${lembretesHTML(today)}
     <div class="grid2">
       <section class="card panel"><h2>Checklists</h2><div class="rows">${st.map(row).join("")}</div></section>
       <div class="stack">
         <section class="card panel"><h2>Não conformidades de hoje</h2>${devs.length ? devs.map(r => { const it = ITEM(r.cl, r.item); const cl = CL(r.cl); const name = r.item === "prod" ? (r.extra.produto + " (" + (C.catOf(r.extra.cat) || {}).nome + ")") : it.q; return `<div class="dev"><b>${esc(name)}${r.v !== "nc" ? ` · <span class="num">${C.fmtT(r.v)}</span>` : ""}</b><small><b>${esc(r.acao || "")}</b> · ${esc(r.obs || "")}</small><small>${esc(cl.title)} · ${esc(pname(r.by))} às ${C.hm(new Date(r.ts))}</small></div>`; }).join("") : `<p class="empty">Nenhuma não conformidade registrada hoje.</p>`}</section>
+        ${tarefasResumo(today)}
         <section class="card panel"><h2>Pista fria e molhos hoje</h2><p class="${expoBad.length ? "bad-t" : "ok-t"}"><b class="num">${expoToday.length}</b> leituras · <b class="num">${expoBad.length}</b> fora da faixa</p></section>
         <section class="card panel"><h2>Ocorrências (7 dias)</h2>${ocorr.length ? ocorr.map(r => { const tipo = ST.records.find(x => x.run === r.run && x.item === "tipo"); return `<div class="dev"><b>${esc(tipo ? tipo.v : "Ocorrência")}</b><small>${esc(r.v)}</small><small>${C.brShort(r.date)} ${C.hm(new Date(r.ts))} · ${esc(pname(r.by))}</small></div>`; }).join("") : `<p class="empty">Nenhuma ocorrência.</p>`}</section>
         ${docs.length ? `<section class="card panel"><h2>Documentos</h2>${docs.slice(0, 6).map(x => `<div class="row r2"><span>${esc(x.name)}<small>${esc(x.def.rede)}</small></span><span class="pill p-${x.s.k}">${esc(x.s.label)}</span></div>`).join("")}<button class="btn ghost" id="go-docs">Ver todos</button></section>` : ""}
       </div>
     </div>
-    <section class="card panel mt"><h2>Temperatura dos equipamentos hoje (POP 1C)</h2><div class="tbl-wrap"><table><thead><tr><th>Equipamento</th><th>Critério</th><th class="r">Manhã</th><th class="r">Noite</th></tr></thead><tbody>${
+    <section class="card panel mt"><h2>Temperatura dos equipamentos hoje (POP 1C)</h2><div class="tbl-wrap"><table><thead><tr><th>Equipamento</th><th>Critério</th><th class="r">1ª leitura</th><th class="r">2ª leitura</th></tr></thead><tbody>${
       D.EQUIP.filter(e => e.pop1c).map(e => { const m = temps.find(r => r.item === "eq_" + e.id && ITEM(r.cl, r.item).leitura === "M"), n = temps.find(r => r.item === "eq_" + e.id && ITEM(r.cl, r.item).leitura === "N"); const cell = r => r ? `<span class="${C.isDev(r, ITEM(r.cl, r.item)) ? "bad-t" : ""}">${C.fmtT(r.v)}</span><small>${C.hm(new Date(r.ts))} · ${esc(pname(r.by))}</small>` : `<span class="muted">–</span>`; return `<tr><td>${esc(e.nome)}</td><td class="muted">${esc(C.critText(e))}</td><td class="r num">${cell(m)}</td><td class="r num">${cell(n)}</td></tr>`; }).join("")
     }</tbody></table></div></section>
     ${receb.length ? `<section class="card panel mt"><h2>Recebimentos de hoje (POP 1B)</h2><div class="tbl-wrap"><table><thead><tr><th>Hora</th><th>Fornecedor</th><th>Produto</th><th class="r">Temp.</th><th>Situação</th></tr></thead><tbody>${receb.map(r => { const c = C.catOf(r.extra.cat) || {}; const bad = C.isDev(r); return `<tr><td class="num">${C.hm(new Date(r.ts))}</td><td>${esc(r.extra.fornecedor)}</td><td>${esc(r.extra.produto)}<small>${esc(c.nome || "")} · ${esc(c.txt || "")}</small></td><td class="r num">${r.v ? C.fmtT(r.v) : "–"}</td><td><span class="pill p-${bad ? "bad" : "ok"}">${bad ? "Fora" : "Ok"}</span></td></tr>`; }).join("")}</tbody></table></div></section>` : ""}`;
   $("#refresh").onclick = load; $("#go-rel").onclick = () => { ST.tab = "rel"; renderMgr(); };
+  const gt = $("#go-tar"); if(gt) gt.onclick = () => { ST.tab = "tar"; renderMgr(); };
   const gd = $("#go-docs"); if(gd) gd.onclick = () => { ST.tab = "docs"; renderMgr(); };
 }
 function tabHist(){
   const now = new Date(), days = [];
   for(let d = 0; d < 14; d++){
     const day = C.addDays(now, -d); const k = C.ymd(day);
-    const daily = D.CHECKLISTS.filter(c => c.freq === "daily").map(c => ({c, s: C.statusOf(c, ST.idx, now, day)}));
+    const daily = C.activeCls(day).filter(c => c.freq === "daily").map(c => ({c, s: C.statusOf(c, ST.idx, d ? C.addDays(day, 1) : now, day)}));
     const recs = ST.records.filter(r => r.date === k);
     days.push({k, d, done: daily.filter(x => x.s.k === "done" || x.s.k === "late-done").length, late: daily.filter(x => x.s.k === "late-done").length, miss: d ? daily.filter(x => x.s.k === "late").length : 0, total: daily.length, nc: recs.filter(r => C.isDev(r, ITEM(r.cl, r.item))).length, daily, recs});
   }
@@ -573,6 +631,76 @@ function treinoForm(){
   });
 }
 
+/* ---------- lembretes e tarefas no painel ---------- */
+function lembretesHTML(today){
+  const me = me_(); if(!me) return "";
+  const list = (D.LEMBRETES || []).filter(l => today >= l.data && today <= C.ymd(C.addDays(C.fromYmd(l.data), 45)) && (l.para.includes(me.id) || me.papel === "master"));
+  return list.map(l => `<div class="alert-bar warn" role="status"><b>Lembrete · ${esc(l.titulo)}</b><span>${esc(l.texto)}</span></div>`).join("");
+}
+function tarefasResumo(today){
+  const t = tarefasDe(today);
+  if(!t) return `<section class="card panel"><h2>Tarefas do dia</h2><p class="empty">Nenhuma lista lançada para hoje.</p>${canEdit() ? `<button class="btn ghost" id="go-tar">Lançar lista</button>` : ""}</section>`;
+  const f = t.itens.filter(i => i.feito).length;
+  return `<section class="card panel"><h2>Tarefas do dia</h2><p class="${f === t.itens.length ? "ok-t" : ""}"><b class="num">${f}/${t.itens.length}</b> feitos · lançada por ${esc(pname(t.por))}</p><button class="btn ghost" id="go-tar">Ver lista</button></section>`;
+}
+
+/* ---------- Tarefas do dia: lançamento pela gestão ---------- */
+function tdraftFor(date){
+  const t = ST.tarefas[date], rows = {}, extra = [];
+  D.TAREFAS.forEach(x => rows[x.id] = {inc: false, qtd: x.qtd, modo: "Preparar", resp: "", obs: ""});
+  (t && t.itens || []).forEach(i => { const base = {inc: true, qtd: i.qtd || "", modo: i.modo || "Preparar", resp: i.resp || "", obs: i.obs || "", feito: i.feito || null};
+    if(rows[i.id]) rows[i.id] = base; else { extra.push({id: i.id, sec: i.sec, nome: i.nome}); rows[i.id] = base; } });
+  return {date, rows, extra, dirty: false};
+}
+function tabTarefas(){
+  const now = new Date(), hoje = C.ymd(now), amanha = C.ymd(C.addDays(now, 1));
+  if(!ST.tdraft) ST.tdraft = tdraftFor(ST.tdate === amanha ? amanha : hoje);
+  const dr = ST.tdraft, ed = canEdit(), date = dr.date;
+  const all = D.TAREFAS.concat(dr.extra), secs = [...new Set(all.map(x => x.sec))];
+  const t = ST.tarefas[date];
+  const nInc = all.filter(x => dr.rows[x.id].inc).length;
+  const staff = ST.people.filter(p => p.ativo !== false && p.papel !== "dono" && p.papel !== "master");
+  const row = x => { const r = dr.rows[x.id];
+    return `<div class="trow ${r.inc ? "on" : ""}">
+      <label class="tinc"><input type="checkbox" data-ti="${x.id}" ${r.inc ? "checked" : ""} ${ed && !r.feito ? "" : "disabled"}> <span><b>${esc(x.nome)}</b>${!r.inc ? `<small>${esc(r.qtd)}</small>` : ""}</span></label>
+      ${r.feito ? `<span class="pill p-ok">Feito · ${esc(pname(r.feito.by))} ${C.hm(new Date(r.feito.at))}</span>` : ""}
+      ${r.inc ? `<div class="tfields">
+        <div class="field"><label>Quantidade</label><input data-tq="${x.id}" value="${esc(r.qtd)}" ${ed ? "" : "disabled"}></div>
+        <div class="field"><label>O que fazer</label><div class="choice">${D.TAREFA_MODOS.map(m => `<button class="c-opt" data-tm="${x.id}" data-val="${esc(m)}" aria-pressed="${r.modo === m}" ${ed ? "" : "disabled"}>${esc(m)}</button>`).join("")}</div></div>
+        <div class="field"><label>Quem faz</label><select data-tr="${x.id}" ${ed ? "" : "disabled"}><option value="">Qualquer pessoa</option>${staff.map(p => `<option value="${p.id}" ${r.resp === p.id ? "selected" : ""}>${esc(p.apelido || p.nome)}</option>`).join("")}</select></div>
+        <div class="field tobs"><label>Observação</label><input data-to="${x.id}" value="${esc(r.obs)}" placeholder="Opcional" ${ed ? "" : "disabled"}></div>
+      </div>` : ""}
+    </div>`; };
+  T().innerHTML = `
+    <div class="mgr-head"><div><span class="eyebrow">Lista da subgerente</span><h1>Tarefas do dia</h1>
+      <p class="sub">${ed ? "Marque o que entra na lista. A quantidade já vem sugerida e pode ser alterada. A lista aparece no tablet no dia escolhido." : "Consulta: quem lança a lista é a gerência."}</p></div>
+      <div class="seg tseg" role="group" aria-label="Dia"><button data-td="${hoje}" aria-pressed="${date === hoje}">Hoje · ${C.brShort(hoje)}</button><button data-td="${amanha}" aria-pressed="${date === amanha}">Amanhã · ${C.brShort(amanha)}</button></div></div>
+    <p class="sub">${t && t.itens && t.itens.length ? `Lista salva por ${esc(pname(t.por))} em ${C.br(t.em.slice(0, 10))} às ${C.hm(new Date(t.em))} · ${t.itens.filter(i => i.feito).length}/${t.itens.length} feitos.` : "Nenhuma lista salva para este dia."}</p>
+    ${secs.map(sec => `<section class="card panel mt"><h2>${esc(sec)}</h2><div class="trows">${all.filter(x => x.sec === sec).map(row).join("")}</div></section>`).join("")}
+    ${ed ? `<section class="card panel mt"><h2>Outro item</h2><div class="two"><div class="field"><label for="tn-nome">Item</label><input id="tn-nome" placeholder="Ex.: MOLHO PESTO"></div><div class="field"><label for="tn-sec">Grupo</label><select id="tn-sec">${secs.concat(secs.includes("OUTROS") ? [] : ["OUTROS"]).map(x => `<option>${esc(x)}</option>`).join("")}</select></div></div><button class="btn ghost" id="tn-add">+ Adicionar à lista</button></section>
+    <div class="foot"><span class="foot-note">${nInc} ${nInc === 1 ? "item marcado" : "itens marcados"}${dr.dirty ? " · alterações não salvas" : ""}</span>${t && t.itens && t.itens.length ? `<button class="btn ghost" id="t-clear">Apagar a lista</button>` : ""}<button class="btn" id="t-save" ${nInc || (t && t.itens && t.itens.length) ? "" : "disabled"}>Salvar lista de ${date === hoje ? "hoje" : "amanhã"}</button></div>` : ""}`;
+  const rr = () => { const y = window.scrollY; tabTarefas(); window.scrollTo(0, y); };
+  T().querySelectorAll("[data-td]").forEach(b => b.onclick = () => {
+    if(b.dataset.td === date) return;
+    if(dr.dirty && !confirm("Trocar de dia sem salvar as alterações?")) return;
+    ST.tdate = b.dataset.td; ST.tdraft = tdraftFor(b.dataset.td); tabTarefas(); });
+  if(!ed) return;
+  const set = (id, k, v) => { dr.rows[id][k] = v; dr.dirty = true; };
+  T().querySelectorAll("[data-ti]").forEach(c => c.onchange = () => { set(c.dataset.ti, "inc", c.checked); rr(); });
+  T().querySelectorAll("[data-tq]").forEach(i => i.oninput = () => set(i.dataset.tq, "qtd", i.value));
+  T().querySelectorAll("[data-to]").forEach(i => i.oninput = () => set(i.dataset.to, "obs", i.value));
+  T().querySelectorAll("[data-tr]").forEach(sl => sl.onchange = () => set(sl.dataset.tr, "resp", sl.value));
+  T().querySelectorAll("[data-tm]").forEach(b => b.onclick = () => { set(b.dataset.tm, "modo", b.dataset.val); rr(); });
+  $("#tn-add").onclick = () => { const nome = $("#tn-nome").value.trim().toUpperCase(); if(!nome) return; const id = "x_" + C.uid(); dr.extra.push({id, sec: $("#tn-sec").value, nome}); dr.rows[id] = {inc: true, qtd: "", modo: "Preparar", resp: "", obs: ""}; dr.dirty = true; rr(); };
+  const save = async (itens, msg) => {
+    try{ await A.admin("setTarefas", adminToken(), {date, itens}); toast(msg, "ok"); ST.tdate = date; ST.tdraft = null; await load(); }
+    catch(e){ if(e.code === "auth"){ ls.del("rotina-admin"); ST.admin = null; ST.view = "team"; render(); } toast("Não foi possível salvar: " + e.message, "bad"); }
+  };
+  $("#t-save").onclick = () => { const itens = all.filter(x => dr.rows[x.id].inc).map(x => { const r = dr.rows[x.id]; return {id: x.id, sec: x.sec, nome: x.nome, qtd: r.qtd.trim(), modo: r.modo, resp: r.resp, obs: r.obs.trim()}; });
+    save(itens, itens.length ? `Lista de ${date === hoje ? "hoje" : "amanhã"} salva: ${itens.length} ${itens.length === 1 ? "item" : "itens"}.` : "Lista apagada."); };
+  const cl = $("#t-clear"); if(cl) cl.onclick = () => { if(confirm("Apagar a lista deste dia?")) save([], "Lista apagada."); };
+}
+
 /* ---------- relatórios ---------- */
 function tabRel(){
   const now = new Date();
@@ -624,7 +752,7 @@ async function savePdf({doc, name, pages}, st){
 /* ---------- configurações ---------- */
 function tabCfg(){
   const me = (ST.admin && ST.admin.person) || ST.person.person;
-  const regs = D.CHECKLISTS;
+  const regs = C.activeCls(new Date());
   const notifOn = typeof Notification !== "undefined" && Notification.permission === "granted";
   if(!canEdit()){
     T().innerHTML = `<section class="card panel"><h2>Este aparelho</h2>

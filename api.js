@@ -49,15 +49,16 @@ function Remote(url){
       }
     },
     admin: (op, token, data) => call("admin", {op, token, data}),
+    tarefa: (token, data) => call("tarefa", {token, ...data}),
   };
 }
 
 /* ---------------- Demonstração ---------------- */
 function Demo(){
-  const KEY = "rotina-demo-v7";
+  const KEY = "rotina-demo-v8";
   let S = ls.get(KEY, null);
   const persist = () => ls.set(KEY, S);
-  if(!S) S = seed();
+  if(!S){ S = seed(); persist(); }
   function seed(){
     const now = new Date(), recs = [];
     let s = 11; const rnd = () => (s = (s*16807)%2147483647, (s-1)/2147483646);
@@ -74,9 +75,13 @@ function Demo(){
                  "3|expo_t|m_molho_bolognesa":{v:"57", acao:"Reaquecido até 75 °C", obs:"Bolognesa abaixo de 60 °C. Reaquecida na retaguarda e voltou a 68 °C."},
                  "6|abertura|pragas":{v:"nc", acao:"Dedetização do shopping acionada", obs:"Barata na porta externa. Shopping acionado; reforço feito no mesmo dia."}};
     const MISSING = new Set(["5|expo_n","2|limp_t"]);
+    /* lista de tarefas de exemplo para hoje */
+    const tl = ["PISTA_ALHO","PISTA_BACON","PISTA_TOMATE_ASSADO","PROTEINA_COSTELA","PROTEINA_TIRAS_DE_FRANGO","MASSA_PENNE","MASSA_RISOTO","MOLHOS_CAESAR"].map(x => x.toLowerCase());
+    const hojeK = C.ymd(now), tar = {};
+    tar[hojeK] = {date:hojeK, por:"manu", em:new Date(now.getTime()-3*3600e3).toISOString(), itens: D.TAREFAS.filter(t => tl.includes(t.id)).map((t, i) => ({id:t.id, sec:t.sec, nome:t.nome, qtd:t.qtd, modo: i===2 ? "Conferir etiqueta" : "Preparar", resp: i<2 ? "rose" : "", obs: i===1 ? "Separar 2 pacotes para o delivery" : "", feito: i<3 ? {by: i<2 ? "rose" : "sabrina", at:new Date(now.getTime()-2*3600e3).toISOString()} : null}))};
     for(let d=13; d>=0; d--){
       const day = C.addDays(now, -d); day.setHours(12,0,0,0);
-      for(const cl of D.CHECKLISTS){
+      for(const cl of C.activeCls(day)){
         if(cl.freq==="ondemand") continue;
         if(MISSING.has(d+"|"+cl.id)) continue;
         const [st, due] = C.windowOf(cl, day);
@@ -90,7 +95,7 @@ function Demo(){
         if(d===1 && cl.id==="expo_t") t.setMinutes(t.getMinutes()+40);  // um atraso
         const by = ownerFor(cl, d);
         const run = C.uid();
-        for(const it of cl.items){
+        for(const it of C.itemsOf(cl, day)){
           if(it.optional) continue;
           const o = OVR[`${d}|${cl.id}|${it.id}`];
           let v = it.t==="ok" ? (it.na && rnd()<.3 ? "na" : "ok") : it.t==="temp" ? String(good(it)) : it.t==="photo" ? "foto" : "";
@@ -128,7 +133,7 @@ function Demo(){
     return {
       people: D.PEOPLE.map(p => ({...p, ativo:true})),
       owners: {}, docs: D.DOCS.map(x => ({id:x.id, last:x.last, empresa:x.empresa, obs:"", hist: x.id==="dedet" ? [{last:"2026-08-29", empresa:"Shopping", obs:""},{last:"2026-09-30", empresa:"Shopping", obs:""}] : []})), pdocs: pd,
-      manut: D.MANUT_SEED.slice(), loja: {...D.LOJA}, treinos: [], records: recs, pins:{},
+      manut: D.MANUT_SEED.slice(), loja: {...D.LOJA}, treinos: [], records: recs, pins:{}, tarefas: tar,
       ver: 3,
     };
   }
@@ -147,7 +152,14 @@ function Demo(){
     },
     logout: async () => {},
     async changePin(token, pin){ const id = String(token).replace("demo-",""); S.pins[id] = String(pin); persist(); return true; },
-    bootstrap: (token, from) => ok({people:S.people.map(pub), owners:S.owners, docs:S.docs, pdocs:S.pdocs, manut:S.manut, loja:S.loja, treinos:S.treinos, records:S.records.filter(r=>!from || r.date>=from)}),
+    bootstrap: (token, from) => { const t = {}, h = C.ymd(new Date()), a = C.ymd(C.addDays(new Date(), 1)); [h, a].forEach(k => { if(S.tarefas[k]) t[k] = S.tarefas[k]; });
+      return ok({people:S.people.map(pub), owners:S.owners, docs:S.docs, pdocs:S.pdocs, manut:S.manut, loja:S.loja, treinos:S.treinos, records:S.records.filter(r=>!from || r.date>=from), tarefas:t}); },
+    async tarefa(token, d){
+      const me = S.people.find(x => "demo-"+x.id === token); if(!me) throw Object.assign(new Error("Entre com seu nome e PIN."), {code:"auth"});
+      const t = S.tarefas[d.date]; const it = t && t.itens.find(x => x.id === d.id); if(!it) throw new Error("Tarefa não encontrada. Atualize a tela.");
+      if(!d.feito && it.feito && it.feito.by !== me.id && !["admin","master"].includes(me.papel)) throw new Error("Só quem marcou ou a gerência pode desfazer.");
+      it.feito = d.feito ? {by:me.id, at:new Date().toISOString()} : null; persist(); return {feito: it.feito};
+    },
     records: (token, from, to) => ok(S.records.filter(r=>r.date>=from && r.date<=to)),
     photos: async (token, ids) => { const o = {}; ids.forEach(id => o[id] = demoPhoto(id)); return o; },
     photoUrl: id => id && id.startsWith("demo:") ? demoPhoto(id) : id,
@@ -171,6 +183,7 @@ function Demo(){
       else if(op==="setPersonDoc"){ S.pdocs[d.personId+"|"+d.doc] = d.date; }
       else if(op==="setManut"){ const i = S.manut.findIndex(x=>x.id===d.id); if(i>=0) S.manut[i] = {...S.manut[i], ...d}; else S.manut.push({...d, id:d.id||C.uid()}); }
       else if(op==="setLoja"){ S.loja = {...S.loja, ...d}; }
+      else if(op==="setTarefas"){ const old = (S.tarefas[d.date]||{}).itens || []; S.tarefas[d.date] = {date:d.date, por:me.id, em:new Date().toISOString(), itens: d.itens.map(i => ({...i, feito: (old.find(o=>o.id===i.id)||{}).feito || null}))}; }
       else if(op==="addTreino"){ S.treinos.push({...d, id:C.uid()}); }
       else if(op==="registerPush" || op==="testPush" || op==="setDefs"){ return {demo:true}; }
       persist(); return {ok:true};
