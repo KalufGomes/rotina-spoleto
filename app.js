@@ -254,7 +254,7 @@ function renderTeam(){
   $("#snd").onclick = () => { ST.sound = !ST.sound; if(ST.sound) beep(); render(); };
   app().querySelectorAll("[data-cl]").forEach(b => b.onclick = () => openChecklist(b.dataset.cl));
   app().querySelectorAll("[data-od]").forEach(b => b.onclick = () => openChecklist(b.dataset.od));
-  const tc = $("#tarefas-open"); if(tc) tc.onclick = async () => { if(!(await ensurePerson({}))) return; ST.tarefasOpen = true; render(); window.scrollTo(0,0); };
+  app().querySelectorAll("[data-tl]").forEach(b => b.onclick = async () => { if(!(await ensurePerson({}))) return; ST.tarefasOpen = b.dataset.tl; render(); window.scrollTo(0,0); });
 }
 async function ensurePerson(cl){
   if(ST.person) return true;
@@ -272,38 +272,44 @@ async function openChecklist(id){
 }
 
 /* ================= TAREFAS DO DIA (tablet) ================= */
+/* Duas listas no mesmo dia: Lista de preparo (quantidades) e Etapas para produção (ids com "e_") */
 const tarefasDe = date => { const t = ST.tarefas[date]; return t && t.itens && t.itens.length ? t : null; };
+const itensDaLista = (t, lista) => t ? t.itens.filter(i => D.listaDe(i.id) === lista) : [];
+const LISTA = id => D.LISTAS.find(l => l.id === id) || D.LISTAS[0];
 function tarefasCard(now){
   const t = tarefasDe(C.ymd(now)); if(!t) return "";
-  const feitos = t.itens.filter(i => i.feito).length, tot = t.itens.length, ok = feitos === tot;
-  return `<h2 class="sec">Tarefas do dia</h2><div class="list"><button class="cl ${ok ? "" : "open"}" id="tarefas-open">
-    <span class="time">LISTA</span>
-    <span class="cl-main"><b>Tarefas do dia</b><small>${tot} ${tot > 1 ? "itens" : "item"} para preparar ou conferir · lançada por ${esc(pname(t.por))}</small>
-    <span class="bar"><i style="width:${Math.round(feitos / tot * 100)}%"></i></span></span>
-    <span class="pill p-${ok ? "ok" : "warn"}">${ok ? "Tudo feito" : `${feitos}/${tot} feitos`}</span></button></div>`;
+  const cards = D.LISTAS.map(l => { const its = itensDaLista(t, l.id); if(!its.length) return "";
+    const feitos = its.filter(i => i.feito).length, tot = its.length, ok = feitos === tot;
+    return `<button class="cl ${ok ? "" : "open"}" data-tl="${l.id}">
+      <span class="time">LISTA</span>
+      <span class="cl-main"><b>${esc(l.titulo)}</b><small>${tot} ${tot > 1 ? "itens" : "item"} · lançada por ${esc(pname(t.por))}</small>
+      <span class="bar"><i style="width:${Math.round(feitos / tot * 100)}%"></i></span></span>
+      <span class="pill p-${ok ? "ok" : "warn"}">${ok ? "Tudo feito" : `${feitos}/${tot} feitos`}</span></button>`; }).join("");
+  return cards ? `<h2 class="sec">Tarefas do dia</h2><div class="list">${cards}</div>` : "";
 }
 function tarefaRowHTML(i, interactive){
-  const me = ST.person && ST.person.person;
+  const me = ST.person && ST.person.person, etapas = D.listaDe(i.id) === "etapas";
   const podeDesfazer = i.feito && me && (i.feito.by === me.id || EDIT(me));
   return `<div class="card item tar ${i.feito ? "done" : ""}">
-    <div class="item-top"><p>${esc(i.nome)}<small class="isub"><b class="qtd">${esc(i.qtd || "")}</b>${i.resp ? ` · para ${esc(pname(i.resp))}` : ""}</small></p><span class="pill ${i.modo === "Conferir etiqueta" ? "p-warn" : "p-idle"}">${esc(i.modo || "Preparar")}</span></div>
+    <div class="item-top"><p>${esc(i.nome)}<small class="isub"><b class="qtd">${esc(i.qtd || "")}</b>${i.resp ? ` · para ${esc(pname(i.resp))}` : ""}</small></p>${etapas ? "" : `<span class="pill ${i.modo === "Conferir etiqueta" ? "p-warn" : "p-idle"}">${esc(i.modo || "Preparar")}</span>`}</div>
     ${i.obs ? `<p class="tar-obs">${esc(i.obs)}</p>` : ""}
     ${i.feito ? `<div class="tar-foot"><span class="pill p-ok">Feito por ${esc(pname(i.feito.by))} às ${C.hm(new Date(i.feito.at))}</span>${interactive && podeDesfazer ? `<button class="btn ghost sm" data-tdes="${i.id}">Desfazer</button>` : ""}</div>`
-      : interactive ? `<div class="choice"><button class="c-ok" data-tok="${i.id}">${i.modo === "Conferir etiqueta" ? "Conferido" : "Feito"}</button></div>` : ""}
+      : interactive ? `<div class="choice"><button class="c-ok" data-tok="${i.id}">${!etapas && i.modo === "Conferir etiqueta" ? "Conferido" : "Feito"}</button></div>` : ""}
   </div>`;
 }
 function renderTarefasTeam(){
   const now = new Date(), date = C.ymd(now), t = tarefasDe(date), me = ST.person && ST.person.person;
-  if(!t || !me){ ST.tarefasOpen = false; return render(); }
-  const secs = [...new Set(t.itens.map(i => i.sec))];
-  const feitos = t.itens.filter(i => i.feito).length;
+  const l = LISTA(ST.tarefasOpen), its = itensDaLista(t, l.id);
+  if(!its.length || !me){ ST.tarefasOpen = false; return render(); }
+  const secs = [...new Set(its.map(i => i.sec))];
+  const feitos = its.filter(i => i.feito).length;
   app().innerHTML = header() + `<main>
     <div class="run-head">
-      <div><span class="eyebrow">${C.br(date)} · ${esc(me.apelido || me.nome)}</span><h1>Tarefas do dia</h1>
-      <p class="sub">Lançada por ${esc(pname(t.por))} · <span class="num">${feitos}/${t.itens.length}</span> feitos. Toque em Feito quando terminar: fica registrado seu nome e a hora.</p></div>
+      <div><span class="eyebrow">${C.br(date)} · ${esc(me.apelido || me.nome)}</span><h1>${esc(l.titulo)}</h1>
+      <p class="sub">Lançada por ${esc(pname(t.por))} · <span class="num">${feitos}/${its.length}</span> feitos. Toque em Feito quando terminar: fica registrado seu nome e a hora.</p></div>
       <button class="btn ghost" id="back">Voltar</button>
     </div>
-    ${secs.map(sec => `<h2 class="sec">${esc(sec)}</h2><div class="items">${t.itens.filter(i => i.sec === sec).map(i => tarefaRowHTML(i, true)).join("")}</div>`).join("")}
+    ${secs.map(sec => `<h2 class="sec">${esc(sec)}</h2><div class="items">${its.filter(i => i.sec === sec).map(i => tarefaRowHTML(i, true)).join("")}</div>`).join("")}
   </main>`;
   bindHeader();
   $("#back").onclick = () => { ST.tarefasOpen = false; render(); };
@@ -640,50 +646,54 @@ function lembretesHTML(today){
 function tarefasResumo(today){
   const t = tarefasDe(today);
   if(!t) return `<section class="card panel"><h2>Tarefas do dia</h2><p class="empty">Nenhuma lista lançada para hoje.</p>${canEdit() ? `<button class="btn ghost" id="go-tar">Lançar lista</button>` : ""}</section>`;
-  const f = t.itens.filter(i => i.feito).length;
-  return `<section class="card panel"><h2>Tarefas do dia</h2><p class="${f === t.itens.length ? "ok-t" : ""}"><b class="num">${f}/${t.itens.length}</b> feitos · lançada por ${esc(pname(t.por))}</p><button class="btn ghost" id="go-tar">Ver lista</button></section>`;
+  return `<section class="card panel"><h2>Tarefas do dia</h2>${D.LISTAS.map(l => { const its = itensDaLista(t, l.id); if(!its.length) return ""; const f = its.filter(i => i.feito).length;
+    return `<p class="${f === its.length ? "ok-t" : ""}">${esc(l.titulo)}: <b class="num">${f}/${its.length}</b> feitos</p>`; }).join("")}<p class="sub">Lançada por ${esc(pname(t.por))}</p><button class="btn ghost" id="go-tar">Ver listas</button></section>`;
 }
 
 /* ---------- Tarefas do dia: lançamento pela gestão ---------- */
 function tdraftFor(date){
   const t = ST.tarefas[date], rows = {}, extra = [];
-  D.TAREFAS.forEach(x => rows[x.id] = {inc: false, qtd: x.qtd, modo: "Preparar", resp: "", obs: ""});
+  D.LISTAS.forEach(l => l.itens.forEach(x => rows[x.id] = {inc: false, qtd: x.qtd, modo: "Preparar", resp: "", obs: ""}));
   (t && t.itens || []).forEach(i => { const base = {inc: true, qtd: i.qtd || "", modo: i.modo || "Preparar", resp: i.resp || "", obs: i.obs || "", feito: i.feito || null};
-    if(rows[i.id]) rows[i.id] = base; else { extra.push({id: i.id, sec: i.sec, nome: i.nome}); rows[i.id] = base; } });
+    if(!rows[i.id]) extra.push({id: i.id, sec: i.sec, nome: i.nome}); rows[i.id] = base; });
   return {date, rows, extra, dirty: false};
 }
 function tabTarefas(){
   const now = new Date(), hoje = C.ymd(now), amanha = C.ymd(C.addDays(now, 1));
   if(!ST.tdraft) ST.tdraft = tdraftFor(ST.tdate === amanha ? amanha : hoje);
-  const dr = ST.tdraft, ed = canEdit(), date = dr.date;
-  const all = D.TAREFAS.concat(dr.extra), secs = [...new Set(all.map(x => x.sec))];
+  const dr = ST.tdraft, ed = canEdit(), date = dr.date, L = LISTA(ST.tlista);
+  const todos = D.LISTAS.flatMap(l => l.itens).concat(dr.extra);
+  const all = L.itens.concat(dr.extra.filter(x => D.listaDe(x.id) === L.id)), secs = [...new Set(all.map(x => x.sec))];
   const t = ST.tarefas[date];
-  const nInc = all.filter(x => dr.rows[x.id].inc).length;
+  const nInc = all.filter(x => dr.rows[x.id].inc).length, nTot = todos.filter(x => dr.rows[x.id].inc).length;
   const staff = ST.people.filter(p => p.ativo !== false && p.papel !== "dono" && p.papel !== "master");
   const row = x => { const r = dr.rows[x.id];
     return `<div class="trow ${r.inc ? "on" : ""}">
       <label class="tinc"><input type="checkbox" data-ti="${x.id}" ${r.inc ? "checked" : ""} ${ed && !r.feito ? "" : "disabled"}> <span><b>${esc(x.nome)}</b>${!r.inc ? `<small>${esc(r.qtd)}</small>` : ""}</span></label>
       ${r.feito ? `<span class="pill p-ok">Feito · ${esc(pname(r.feito.by))} ${C.hm(new Date(r.feito.at))}</span>` : ""}
-      ${r.inc ? `<div class="tfields">
-        <div class="field"><label>Quantidade</label><input data-tq="${x.id}" value="${esc(r.qtd)}" ${ed ? "" : "disabled"}></div>
-        <div class="field"><label>O que fazer</label><div class="choice">${D.TAREFA_MODOS.map(m => `<button class="c-opt" data-tm="${x.id}" data-val="${esc(m)}" aria-pressed="${r.modo === m}" ${ed ? "" : "disabled"}>${esc(m)}</button>`).join("")}</div></div>
+      ${r.inc ? `<div class="tfields ${L.modos ? "" : "nomodo"}">
+        <div class="field"><label>${esc(L.campo)}</label><input data-tq="${x.id}" value="${esc(r.qtd)}" ${ed ? "" : "disabled"}></div>
+        ${L.modos ? `<div class="field"><label>O que fazer</label><div class="choice">${D.TAREFA_MODOS.map(m => `<button class="c-opt" data-tm="${x.id}" data-val="${esc(m)}" aria-pressed="${r.modo === m}" ${ed ? "" : "disabled"}>${esc(m)}</button>`).join("")}</div></div>` : ""}
         <div class="field"><label>Quem faz</label><select data-tr="${x.id}" ${ed ? "" : "disabled"}><option value="">Qualquer pessoa</option>${staff.map(p => `<option value="${p.id}" ${r.resp === p.id ? "selected" : ""}>${esc(p.apelido || p.nome)}</option>`).join("")}</select></div>
         <div class="field tobs"><label>Observação</label><input data-to="${x.id}" value="${esc(r.obs)}" placeholder="Opcional" ${ed ? "" : "disabled"}></div>
       </div>` : ""}
     </div>`; };
+  const cont = l => { const n = l.itens.concat(dr.extra.filter(x => D.listaDe(x.id) === l.id)).filter(x => dr.rows[x.id].inc).length; return n ? ` (${n})` : ""; };
   T().innerHTML = `
-    <div class="mgr-head"><div><span class="eyebrow">Lista da subgerente</span><h1>Tarefas do dia</h1>
-      <p class="sub">${ed ? "Marque o que entra na lista. A quantidade já vem sugerida e pode ser alterada. A lista aparece no tablet no dia escolhido." : "Consulta: quem lança a lista é a gerência."}</p></div>
+    <div class="mgr-head"><div><span class="eyebrow">Listas da gerência</span><h1>Tarefas do dia</h1>
+      <p class="sub">${ed ? "Marque o que entra na lista. O texto já vem sugerido e pode ser alterado. As listas aparecem no tablet no dia escolhido." : "Consulta: quem lança as listas é a gerência."}</p></div>
       <div class="seg tseg" role="group" aria-label="Dia"><button data-td="${hoje}" aria-pressed="${date === hoje}">Hoje · ${C.brShort(hoje)}</button><button data-td="${amanha}" aria-pressed="${date === amanha}">Amanhã · ${C.brShort(amanha)}</button></div></div>
-    <p class="sub">${t && t.itens && t.itens.length ? `Lista salva por ${esc(pname(t.por))} em ${C.br(t.em.slice(0, 10))} às ${C.hm(new Date(t.em))} · ${t.itens.filter(i => i.feito).length}/${t.itens.length} feitos.` : "Nenhuma lista salva para este dia."}</p>
+    <div class="seg tseg mt" role="group" aria-label="Lista">${D.LISTAS.map(l => `<button data-tls="${l.id}" aria-pressed="${l.id === L.id}">${esc(l.titulo)}${cont(l)}</button>`).join("")}</div>
+    <p class="sub">${t && t.itens && t.itens.length ? `Salvo por ${esc(pname(t.por))} em ${C.br(t.em.slice(0, 10))} às ${C.hm(new Date(t.em))} · ${t.itens.filter(i => i.feito).length}/${t.itens.length} feitos nas duas listas.` : "Nenhuma lista salva para este dia."}</p>
     ${secs.map(sec => `<section class="card panel mt"><h2>${esc(sec)}</h2><div class="trows">${all.filter(x => x.sec === sec).map(row).join("")}</div></section>`).join("")}
     ${ed ? `<section class="card panel mt"><h2>Outro item</h2><div class="two"><div class="field"><label for="tn-nome">Item</label><input id="tn-nome" placeholder="Ex.: MOLHO PESTO"></div><div class="field"><label for="tn-sec">Grupo</label><select id="tn-sec">${secs.concat(secs.includes("OUTROS") ? [] : ["OUTROS"]).map(x => `<option>${esc(x)}</option>`).join("")}</select></div></div><button class="btn ghost" id="tn-add">+ Adicionar à lista</button></section>
-    <div class="foot"><span class="foot-note">${nInc} ${nInc === 1 ? "item marcado" : "itens marcados"}${dr.dirty ? " · alterações não salvas" : ""}</span>${t && t.itens && t.itens.length ? `<button class="btn ghost" id="t-clear">Apagar a lista</button>` : ""}<button class="btn" id="t-save" ${nInc || (t && t.itens && t.itens.length) ? "" : "disabled"}>Salvar lista de ${date === hoje ? "hoje" : "amanhã"}</button></div>` : ""}`;
+    <div class="foot"><span class="foot-note">${nInc} ${nInc === 1 ? "item marcado" : "itens marcados"} nesta lista${nTot !== nInc ? ` · ${nTot} nas duas` : ""}${dr.dirty ? " · alterações não salvas" : ""}</span>${t && t.itens && t.itens.length ? `<button class="btn ghost" id="t-clear">Apagar as listas do dia</button>` : ""}<button class="btn" id="t-save" ${nTot || (t && t.itens && t.itens.length) ? "" : "disabled"}>Salvar listas de ${date === hoje ? "hoje" : "amanhã"}</button></div>` : ""}`;
   const rr = () => { const y = window.scrollY; tabTarefas(); window.scrollTo(0, y); };
   T().querySelectorAll("[data-td]").forEach(b => b.onclick = () => {
     if(b.dataset.td === date) return;
     if(dr.dirty && !confirm("Trocar de dia sem salvar as alterações?")) return;
     ST.tdate = b.dataset.td; ST.tdraft = tdraftFor(b.dataset.td); tabTarefas(); });
+  T().querySelectorAll("[data-tls]").forEach(b => b.onclick = () => { ST.tlista = b.dataset.tls; tabTarefas(); window.scrollTo(0, 0); });
   if(!ed) return;
   const set = (id, k, v) => { dr.rows[id][k] = v; dr.dirty = true; };
   T().querySelectorAll("[data-ti]").forEach(c => c.onchange = () => { set(c.dataset.ti, "inc", c.checked); rr(); });
@@ -691,14 +701,14 @@ function tabTarefas(){
   T().querySelectorAll("[data-to]").forEach(i => i.oninput = () => set(i.dataset.to, "obs", i.value));
   T().querySelectorAll("[data-tr]").forEach(sl => sl.onchange = () => set(sl.dataset.tr, "resp", sl.value));
   T().querySelectorAll("[data-tm]").forEach(b => b.onclick = () => { set(b.dataset.tm, "modo", b.dataset.val); rr(); });
-  $("#tn-add").onclick = () => { const nome = $("#tn-nome").value.trim().toUpperCase(); if(!nome) return; const id = "x_" + C.uid(); dr.extra.push({id, sec: $("#tn-sec").value, nome}); dr.rows[id] = {inc: true, qtd: "", modo: "Preparar", resp: "", obs: ""}; dr.dirty = true; rr(); };
+  $("#tn-add").onclick = () => { const nome = $("#tn-nome").value.trim().toUpperCase(); if(!nome) return; const id = (L.id === "etapas" ? "e_x_" : "x_") + C.uid(); dr.extra.push({id, sec: $("#tn-sec").value, nome}); dr.rows[id] = {inc: true, qtd: "", modo: "Preparar", resp: "", obs: ""}; dr.dirty = true; rr(); };
   const save = async (itens, msg) => {
     try{ await A.admin("setTarefas", adminToken(), {date, itens}); toast(msg, "ok"); ST.tdate = date; ST.tdraft = null; await load(); }
     catch(e){ if(e.code === "auth"){ ls.del("rotina-admin"); ST.admin = null; ST.view = "team"; render(); } toast("Não foi possível salvar: " + e.message, "bad"); }
   };
-  $("#t-save").onclick = () => { const itens = all.filter(x => dr.rows[x.id].inc).map(x => { const r = dr.rows[x.id]; return {id: x.id, sec: x.sec, nome: x.nome, qtd: r.qtd.trim(), modo: r.modo, resp: r.resp, obs: r.obs.trim()}; });
-    save(itens, itens.length ? `Lista de ${date === hoje ? "hoje" : "amanhã"} salva: ${itens.length} ${itens.length === 1 ? "item" : "itens"}.` : "Lista apagada."); };
-  const cl = $("#t-clear"); if(cl) cl.onclick = () => { if(confirm("Apagar a lista deste dia?")) save([], "Lista apagada."); };
+  $("#t-save").onclick = () => { const itens = todos.filter(x => dr.rows[x.id].inc).map(x => { const r = dr.rows[x.id]; return {id: x.id, sec: x.sec, nome: x.nome, qtd: r.qtd.trim(), modo: r.modo, resp: r.resp, obs: r.obs.trim()}; });
+    save(itens, itens.length ? `Listas de ${date === hoje ? "hoje" : "amanhã"} salvas: ${itens.length} ${itens.length === 1 ? "item" : "itens"}.` : "Listas apagadas."); };
+  const cl = $("#t-clear"); if(cl) cl.onclick = () => { if(confirm("Apagar as duas listas deste dia?")) save([], "Listas apagadas."); };
 }
 
 /* ---------- relatórios ---------- */

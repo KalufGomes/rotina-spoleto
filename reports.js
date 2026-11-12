@@ -137,6 +137,8 @@ function rede(ctx, month, sel){
       ["Máquina de gelo","S",[["semanal","gelo_l"]]],["Máquina de lavar","D",[["limp_t","maq_lavar"],["fechamento","maq_lavar"]]],["Organizadores","S",[["semanal","organizadores"]]],["Paredes","S",[["semanal","paredes"]]],["Piso/rodapé","D",[["limp_m","piso"],["limp_t","piso"],["fechamento","piso"]]],
       ["Pista fria","D",[["fechamento","pista_l"]]],["Portas","M",[["semanal","portas"],["mensal","portas"]]],["Prateleiras frente de loja","S",[["semanal","prateleiras_frente"]]],["Pratos","D",[["limp_t","pratos"],["fechamento","pratos"]]],["Ralos","D",[["fechamento","ralos"]]],
       ["Tábuas de corte: higienização","D",[["fechamento","tabuas"]]],["Teto","S",[["semanal","teto"]]],
+      ["Câmara fria","S",[["semanal","camara_l"]]],["Escritório","S",[["semanal","escritorio"]]],["Escada","S",[["semanal","escada"]]],["Cozinha de utensílios","S",[["semanal","cozinha_utens"]]],
+      ["Caixas de frigideiras","S",[["semanal","caixas_frig"]]],["Inox (geladeiras dos balcões)","S",[["semanal","inox_balcoes"]]],
     ];
     const ownersTxt = (pairs) => { const o = new Set(); pairs.forEach(([cl]) => ((ctx.owners||{})[cl]?.owners||[]).forEach(x=>o.add(x))); return o.size ? [...o].map(initials).join("/") : "Todos"; };
     const body = MAP.map(([nome, f, pairs]) => [nome, ownersTxt(pairs), f, ...days.map(d => { if(!pairs.length) return ""; const who = new Set(); let nc = false;

@@ -166,9 +166,10 @@ tr.click{cursor:pointer}tr.sel td{background:var(--gold-soft)}
 .tinc{display:flex;gap:12px;align-items:center;cursor:pointer}.tinc input{width:22px;height:22px;accent-color:var(--gold);flex:none}.tinc span{display:grid}.tinc small{color:var(--muted)}
 .trow.on{background:var(--gold-soft);margin:0 -18px;padding:10px 18px}
 .tfields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);gap:8px 10px;padding-left:34px}.tfields .field{margin:0}.tfields .tobs{grid-column:1/-1}
+.tfields.nomodo{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)}
 .tfields .choice button{flex:1 1 auto;padding:9px 10px;font-size:13px}
 .tseg{background:var(--line)}.tseg button{color:var(--fg)}
-@media (max-width:760px){.tfields{grid-template-columns:1fr;padding-left:0}}
+@media (max-width:760px){.tfields,.tfields.nomodo{grid-template-columns:1fr;padding-left:0}}
 /* modal e toast */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:20;display:grid;place-items:center;padding:16px}
 .modal{width:min(560px,100%);max-height:calc(100% - 32px);overflow:auto;padding:20px;display:grid;gap:14px}

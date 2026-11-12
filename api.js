@@ -55,7 +55,7 @@ function Remote(url){
 
 /* ---------------- Demonstração ---------------- */
 function Demo(){
-  const KEY = "rotina-demo-v8";
+  const KEY = "rotina-demo-v9";
   let S = ls.get(KEY, null);
   const persist = () => ls.set(KEY, S);
   if(!S){ S = seed(); persist(); }
@@ -76,9 +76,9 @@ function Demo(){
                  "6|abertura|pragas":{v:"nc", acao:"Dedetização do shopping acionada", obs:"Barata na porta externa. Shopping acionado; reforço feito no mesmo dia."}};
     const MISSING = new Set(["5|expo_n","2|limp_t"]);
     /* lista de tarefas de exemplo para hoje */
-    const tl = ["PISTA_ALHO","PISTA_BACON","PISTA_TOMATE_ASSADO","PROTEINA_COSTELA","PROTEINA_TIRAS_DE_FRANGO","MASSA_PENNE","MASSA_RISOTO","MOLHOS_CAESAR"].map(x => x.toLowerCase());
+    const tl = ["PISTA_ALHO","PISTA_BACON","PISTA_TOMATE_ASSADO","PROTEINA_COSTELA","PROTEINA_TIRAS_DE_FRANGO","MASSA_PENNE","MASSA_RISOTO","MOLHOS_CAESAR","E_PISTA_BACON","E_PROTEINA_TIRAS_DE_FRANGO","E_MASSA_MASSAS_EM_GERAL"].map(x => x.toLowerCase());
     const hojeK = C.ymd(now), tar = {};
-    tar[hojeK] = {date:hojeK, por:"manu", em:new Date(now.getTime()-3*3600e3).toISOString(), itens: D.TAREFAS.filter(t => tl.includes(t.id)).map((t, i) => ({id:t.id, sec:t.sec, nome:t.nome, qtd:t.qtd, modo: i===2 ? "Conferir etiqueta" : "Preparar", resp: i<2 ? "rose" : "", obs: i===1 ? "Separar 2 pacotes para o delivery" : "", feito: i<3 ? {by: i<2 ? "rose" : "sabrina", at:new Date(now.getTime()-2*3600e3).toISOString()} : null}))};
+    tar[hojeK] = {date:hojeK, por:"manu", em:new Date(now.getTime()-3*3600e3).toISOString(), itens: D.TAREFAS.concat(D.ETAPAS).filter(t => tl.includes(t.id)).map((t, i) => ({id:t.id, sec:t.sec, nome:t.nome, qtd:t.qtd, modo: i===2 ? "Conferir etiqueta" : "Preparar", resp: i<2 ? "rose" : "", obs: i===1 ? "Separar 2 pacotes para o delivery" : "", feito: i<3 ? {by: i<2 ? "rose" : "sabrina", at:new Date(now.getTime()-2*3600e3).toISOString()} : null}))};
     for(let d=13; d>=0; d--){
       const day = C.addDays(now, -d); day.setHours(12,0,0,0);
       for(const cl of C.activeCls(day)){

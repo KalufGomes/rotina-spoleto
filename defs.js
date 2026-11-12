@@ -134,6 +134,7 @@ const CHECKLISTS = [
     L("forno_fora","Forno (limpeza interna e externa)"), L("freezer_l","Freezer"), L("interruptores","Interruptores e tomadas"), L("lixeiras","Lixeiras (lavagem)"), L("organizadores","Organizadores"),
     L("paredes","Paredes"), old(L("portas","Portas")), L("prateleiras_frente","Prateleiras da frente de loja"), L("teto","Teto"), L("gelo_l","Máquina de gelo"),
     old({id:"retrolavagem", t:"ok", q:"Retrolavagem do filtro de água", rede:"POP 5A", pop:"agua", ref:"Art. 123"}),
+    ...[["camara_l","Câmara fria"],["escritorio","Escritório"],["escada","Escada"],["cozinha_utens","Cozinha de utensílios"],["caixas_frig","Caixas de frigideiras"],["inox_balcoes","Inox (geladeiras dos balcões)"]].map(([id, q]) => L(id, q, {from:"2026-11-16"})),
   ]},
   {id:"mensal", title:"Limpeza mensal", sub:"POP 8A · feita pela equipe", freq:"monthly", start:"07:40", due:"22:30", items:[
     L("luminarias","Luminárias"), nw(L("portas","Portas")), nw(L("coifa","Coifa")),
@@ -242,6 +243,17 @@ const TAREFAS = [
   ["MASSA (COZINHAR)", ["FETUCCINE","2 PACOTES"],["PENNE","2 PACOTES"],["ESPAGUETE","2 PACOTES"],["FARFALLE","1 PACOTE"],["PENNE INTEGRAL","½ PACOTE"],["RISOTO","4 PACOTES"],["LASANHA","1 PACOTE"],["PIZZA","7 UNIDADES MUSSARELA E 4 DE CALABRESA"],["RAVIOLI CONGELADO","5 PACOTES"]],
   ["MOLHOS", ["MOSTARDA E MEL","1 BISNAGA"],["CAESAR","2 BISNAGAS"]],
 ].flatMap(([sec, ...list]) => list.map(([nome, qtd]) => ({id: slug(sec.split(" ")[0] + "_" + nome), sec, nome, qtd})));
+/* Etapas para produção: segunda lista do dia. O texto das etapas vem sugerido e pode ser mudado. (id começa com "e_") */
+const ETAPAS = [
+  ["PISTA", ["ALHO","Assar e porcionar"],["CEBOLA","Cortar e refogar"],["CALABRESA","Cortar e assar"],["BACON","Assar e porcionar"],["TOMATE ASSADO","Cortar e assar"],["CEBOLA CARAMELIZADA","Cortar e refogar"],["SALADA","Lavar e porcionar"]],
+  ["PROTEÍNA", ["CAMARÃO","Temperar e porcionar"],["ALMÔNDEGAS","Assar e porcionar"],["TIRAS DE FRANGO","Marinar, assar, cortar e porcionar"],["FILÉ DE FRANGO","Marinar, assar e porcionar"],["FRANGO DESFIADO","Assar e porcionar"]],
+  ["MASSA", ["MASSAS EM GERAL","Cozinhar e porcionar"],["LASANHA","Descongelar e porcionar"]],
+].flatMap(([sec, ...list]) => list.map(([nome, qtd]) => ({id: "e_" + slug(sec + "_" + nome), sec, nome, qtd})));
+const LISTAS = [
+  {id:"preparo", titulo:"Lista de preparo", campo:"Quantidade", itens:TAREFAS, modos:true},
+  {id:"etapas",  titulo:"Etapas para produção", campo:"Etapas", itens:ETAPAS, modos:false},
+];
+const listaDe = id => String(id).startsWith("e_") ? "etapas" : "preparo";
 const TAREFA_MODOS = ["Preparar", "Conferir etiqueta"];
 
 /* Lembretes com data marcada: aparecem no painel da gestão e chegam no celular das pessoas indicadas. */
@@ -259,5 +271,5 @@ const NOTIF_DEFAULTS = {
 };
 const STARS = [[95,5],[86,4],[77,3],[67,2],[57,1],[0,0]];
 
-g.DEFS = {NOTIF_DEFAULTS, LOJA, PEOPLE, EQUIP, PISTA, MOLHOS, CHECKLISTS, ACOES, FORNECEDORES, CATEG, DOCS, PERSON_DOCS, PERSON_DOC_SEED, MANUT_SEED, STARS, TAREFAS, TAREFA_MODOS, LEMBRETES, VERSION:"2026.11.06"};
+g.DEFS = {NOTIF_DEFAULTS, LOJA, PEOPLE, EQUIP, PISTA, MOLHOS, CHECKLISTS, ACOES, FORNECEDORES, CATEG, DOCS, PERSON_DOCS, PERSON_DOC_SEED, MANUT_SEED, STARS, TAREFAS, ETAPAS, LISTAS, listaDe, TAREFA_MODOS, LEMBRETES, VERSION:"2026.11.13"};
 })(typeof window!=="undefined"?window:globalThis);
